@@ -170,12 +170,17 @@ export function PageFlowBlock({
         });
         if (cancelled) return;
 
+        // 文字表格矩形必须并入切片几何 —— 与 I13 位图框同一个坑：
+        // 只进 region 不进 figurePaths，空隙切图会因「该带没有图形」而不发生，
+        // 整张表格照样丢失（表格没有矢量路径，几何来源只能是识别出的矩形本身）。
+        const sliceGeometry = figurePaths.concat(analysis.tableRegions.map((t) => t.bbox));
+
         setData({
           analysis,
           geometryConfidence,
           referencesActive: analysis.referencesActive,
           offscreen,
-          figurePaths,
+          figurePaths: sliceGeometry,
           // 用域层算好的图形区域（已扩展到包住图内文字）。跨栏判定交给域层。
           figureRegions: analysis.figureRegions,
         });

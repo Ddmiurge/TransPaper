@@ -9,7 +9,7 @@ import { PageFlowBlock, type PageReadyInfo } from './components/PageFlowBlock';
 import type { FlowMeasurement } from './components/PageFlowView';
 import { ParallelLayer } from './components/ParallelLayer';
 import { buildPageFlow, type PageFlow } from './domain/pageFlow';
-import { figureClusters, figurePathBoxes, isEnclosedByGraphics } from './domain/figureRegions';
+import { figurePathBoxes, isEnclosedByGraphics } from './domain/figureRegions';
 import { analyzePage } from './domain/pipeline';
 import { findTitleBlock } from './domain/frontMatter';
 import { selfCheck, type SelfCheckReport } from './domain/selfCheck';
@@ -575,7 +575,6 @@ export default function App() {
         const trusted = confidence >= 0.5;
 
         const paths = trusted ? figurePathBoxes(rawPaths) : [];
-        const clusters = trusted ? figureClusters(rawPaths).filter((c) => c.pathCount >= 4) : [];
 
         const result = analyzePage({
           pageIndex: pageNumber - 1,
@@ -595,20 +594,15 @@ export default function App() {
         setAnalysis(result);
         setReport(selfCheck(result));
         setOffscreen(off);
-        setFigurePaths(paths);
+        // 文字表格矩形并入切片几何（I17）：表格没有矢量路径，
+        // 不并入则空隙切图不发生 —— 与位图框（I13）同一类坑
+        setFigurePaths(paths.concat(result.tableRegions.map((t) => t.bbox)));
         setGeometryConfidence(confidence);
 
-        // 横跨栏缝的图形区域：交给文档流作为整体裁切。
-        // 栏缝位置取实际检测结果，不硬编码 —— 单栏页、三栏页的栏缝都不一样。
-        setSpanningFigures(
-          trusted && result.columnSplits.length > 0
-            ? clusters
-                .map((c) => c.bbox)
-                .filter((bbox) =>
-                  result.columnSplits.some((x) => bbox.x < x && bbox.x + bbox.width > x)
-                )
-            : []
-        );
+        // 图形区域统一取域层算好的那份（路径簇 + 位图框 + 表格矩形，
+        // 已扩展到包住图内文字）。跨栏判定交给 pageFlow 的域层逻辑 ——
+        // 这里自己再筛一遍「跨栏」等于把同一份几何算两遍，迟早漂移。
+        setSpanningFigures(result.figureRegions);
         setBusy(false);
       } catch (e) {
         if (cancelled) return;

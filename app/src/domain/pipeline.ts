@@ -10,6 +10,7 @@ import { unionBBox } from './stats';
 import { markFormulas } from './formulas';
 import { markReferences } from './references';
 import { markFrontMatter } from './frontMatter';
+import { detectTableRegions } from './tables';
 import { analyzeTextStyle, refineBodyFontSize, type TextStyleOptions } from './textStyle';
 import type { BBox, Block, PageAnalysis, Segment, TextItem, TextLine } from '../types';
 
@@ -165,6 +166,28 @@ export function analyzePage(input: AnalyzeInput): PageAnalysis {
   // （作者块不在参考文献区间、不是公式、也不是页码）。
   markFrontMatter(blocks, height);
 
+  // ── 文字表格识别（I17）──
+  //
+  // ACL / NeurIPS 式排版里表格是「正文号文字 + 列间隙」，
+  // 字号判据与矢量路径都够不着它，是 R3「表格保持原样」最后漏网的非文本元素。
+  // 判据与防误报闸门见 tables.ts —— 必须在 markFormulas / markReferences /
+  // markFrontMatter 之后调用：候选行要靠这些标记过滤掉公式/文献/作者行。
+  const tableRegions = detectTableRegions(lines, items, style.bodyFontSize, blocks);
+  const tableBoxes = tableRegions.map((r) => r.bbox);
+  for (const block of blocks) {
+    if (!block.isBodyText || block.formula) continue;
+    const covered = tableBoxes.some((r) => {
+      const w = Math.min(block.bbox.x + block.bbox.width, r.x + r.width) - Math.max(block.bbox.x, r.x);
+      const h = Math.min(block.bbox.y + block.bbox.height, r.y + r.height) - Math.max(block.bbox.y, r.y);
+      if (w <= 0 || h <= 0) return false;
+      return (w * h) / (block.bbox.width * block.bbox.height) >= 0.5;
+    });
+    if (!covered) continue;
+    block.isBodyText = false;
+    block.figureReason = 'table-region';
+    block.translatable = false;
+  }
+
   // 图形区域：路径聚类 → 扩展到包住图内文字。
   //
   // 扩展这一步是修「图被上下截成两段还错位」的关键：矢量路径不覆盖图内的文字标签，
@@ -194,6 +217,9 @@ export function analyzePage(input: AnalyzeInput): PageAnalysis {
       .filter((c) => c.pathCount >= MIN_PATHS_PER_FIGURE)
       .map((c) => c.bbox),
     ...imageRegions,
+    // 表格矩形并入区域集合：与矢量簇/位图框描述同一片内容时（如带线框的表）
+    // 先合并，避免产出两片互相重叠的切片
+    ...tableBoxes,
   ]);
 
   const figureRegions = expandRegionsToText(regionCandidates, flowItems, {
@@ -268,6 +294,7 @@ const segments: Segment[] = blocks.map((block) => ({
     bodyBlockCount: style.bodyBlockIds.size,
     contentBounds,
     figureRegions,
+    tableRegions,
     referencesActive,
   };
 }

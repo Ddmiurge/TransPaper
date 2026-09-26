@@ -80,7 +80,7 @@ export const DEFAULT_TRANSLATION_CONFIG: TranslationConfig = {
   provider: 'deepseek',
   model: 'deepseek-chat',
   targetLang: 'zh-Hans',
-  promptVersion: 1,
+  promptVersion: 2,
 };
 
 // ────────────────────────────────────────────────────────────
@@ -149,11 +149,14 @@ export const TRANSLATION_SYSTEM_PROMPT = [
   '必须遵守：',
   '1. 只输出译文本身，不要任何前言、解释、引号或"以下是译文"之类的话',
   '2. 保持学术语体：准确、简洁、书面化，不要口语化表达',
-  '3. 原样保留行内数学符号、变量名、函数名、算法名（如 F(x)、ResNet、ReLU）',
-  '4. 原样保留引用编号与公式编号（如 [1]、[22, 21]、(3)）',
-  '5. 图表题注保持编号格式：Figure N → 图 N，Table N → 表 N',
-  '6. 不要补充原文没有的内容，不要加括号注释，不要扩写',
-  '7. 专有名词首次出现时可用通行译名，但不要生造译名',
+  '3. 行内数学公式必须原样保留：公式片段（含等号、运算符、括号、希腊字母、'
+    + '上下标符号）逐字符照抄，不要翻译、不要改写、不要调整顺序、不要丢失符号；'
+    + '例如 "where f(x) = y and g(z) ∈ W" 译为「其中 f(x) = y 且 g(z) ∈ W」',
+  '4. 原样保留变量名、函数名、算法名与数据集名（如 F(x)、ResNet、ReLU、ImageNet）',
+  '5. 原样保留引用编号与公式编号（如 [1]、[22, 21]、(3)）',
+  '6. 图表题注保持编号格式：Figure N → 图 N，Table N → 表 N',
+  '7. 不要补充原文没有的内容，不要加括号注释，不要扩写',
+  '8. 专有名词首次出现时可用通行译名，但不要生造译名',
 ].join('\n');
 
 export function buildTranslationPrompt(source: string): string {

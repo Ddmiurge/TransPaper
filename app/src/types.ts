@@ -7,6 +7,8 @@
  * 坐标约定：viewport 坐标系，原点在页面左上角，y 轴向下，单位为 CSS 像素。
  */
 
+import type { TableRegion } from './domain/tables';
+
 /** 轴对齐包围盒 */
 export interface BBox {
   x: number;
@@ -98,7 +100,7 @@ export interface TextLine {
  * I0 中所有块都是正文段落，不区分类型。
  */
 /** 被判定为非正文（图形区域内）的原因 */
-export type FigureReason = 'font-size' | 'graphics-region' | 'narrow' | null;
+export type FigureReason = 'font-size' | 'graphics-region' | 'narrow' | 'table-region' | null;
 
 /**
  * 「保留为文本但**不翻译**」的原因。
@@ -234,6 +236,15 @@ export interface PageAnalysis {
    * 各算一遍迟早漂移。
    */
   figureRegions: BBox[];
+  /**
+   * 本页识别出的**文字表格**区域（domain/tables.ts）。
+   *
+   * 与 figureRegions 分开返回的原因：表格矩形没有矢量路径/位图做几何来源，
+   * 但 pageFlow 的空隙切图只认 figurePaths —— 调用方必须把这份矩形
+   * 并进 buildPageFlow 的 figurePaths，切片才会发生
+   * （与 I13 位图框「只进 region 不进 figurePaths 就不切图」是同一类坑）。
+   */
+  tableRegions: TableRegion[];
   /**
    * 全页内容的包围盒。
    *

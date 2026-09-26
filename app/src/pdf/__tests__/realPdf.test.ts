@@ -128,9 +128,12 @@ describe('真实双栏 PDF 的端到端校验', () => {
       const figureRegions = analysis.figureRegions;
 
       // 图形覆盖自检：图形路径有没有被正文块「挖掉」的像素
+      // 文字表格矩形并入切片几何（I17）：表格没有矢量路径，
+      // 不并入则空隙切图不发生 —— 与位图框（I13）同一类坑
+      const sliceGeometry = figurePaths.concat(analysis.tableRegions.map((t) => t.bbox));
       const flow = buildPageFlow(analysis, new Map(), {
         hasContent: () => true,
-        figurePaths,
+        figurePaths: sliceGeometry,
         figureRegions,
       });
       const coverage = flow.stats;
@@ -298,7 +301,7 @@ describe('真实双栏 PDF 的端到端校验', () => {
       if (process.env.FLOW_DUMP && Number(process.env.FLOW_DUMP) === p) {
         const flow = buildPageFlow(analysis, new Map(), {
           hasContent: () => true,
-          figurePaths,
+          figurePaths: figurePaths.concat(analysis.tableRegions.map((t) => t.bbox)),
           figureRegions,
         });
         console.log(` 文档流节点（${flow.nodes.length} 个，内容宽 ${flow.stats.contentWidth}）：`);

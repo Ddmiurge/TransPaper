@@ -52,6 +52,7 @@ function makeAnalysis(blocks: Block[], boundaries: number[]): PageAnalysis {
     bodyBlockCount: blocks.filter((b) => b.isBodyText).length,
     contentBounds: contentBoundsOf(blocks, boundaries),
     figureRegions: [],
+    tableRegions: [],
     referencesActive: false,
   };
 }

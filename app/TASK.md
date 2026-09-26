@@ -1,6 +1,43 @@
+# I17 任务清单 · 文字表格识别（统一切片保留原样）
+
+> 当前迭代：**I17** · 状态：**已完成** · 小结见 [iterations/I17-summary.md](iterations/I17-summary.md)
+> 决策记录见 [ADR-015](../docs/adr/ADR-015-text-tables-as-slices.md)
+
+## 目标
+
+ACL 式「小字号文字 + 列间隙」表格是 R3「表格保持原样」最后漏网的非文本元素，
+此前被逐行切成碎条。识别后走图形区域路线：整表一个完整切片，不翻译。
+
+## 进度
+
+- [x] `domain/tables.ts`：行级判据（大间隙 + 跨行对齐 + ≥3 行连续），阈值在 ACL 真实表格标定
+- [x] 三道防误报闸：块级排除（不要求 isBodyText）/ 长词密度 / 共享列边界
+- [x] `pipeline.ts`：检测 + 区域并入 `figureRegions` + `PageAnalysis.tableRegions` 返回
+- [x] `PageFlowBlock` / `App.tsx` / `realPdf.test` 三处把表格矩形并入 `figurePaths`（I13 同类坑）
+- [x] `App.tsx` 图形区域改用域层统一算好的那份（删除自己筛跨栏的重复逻辑）
+- [x] 单测 7 → 9；新增 `tables.real.test.ts` 4 用例（含单切片断言、基线无害断言）
+- [x] 附带（I19 第一步）：翻译提示词强化行内公式保留 + `promptVersion` 1→2
+
+## 结果
+
+| 指标 | 之前 | 现在 |
+|---|---|---|
+| ACL 文字表格 | 逐行碎条、行距丢失 | **11 个区域全部检出，单切片完整保留** |
+| 表格文字 | 不进翻译（字号判据） | 不进翻译（区域断言固化） |
+| 误报 | — | 正文段落（含行内公式）被长词密度闸排除，固化断言 |
+| 测试 | 16 文件 / 167 用例 | **18 文件 / 180 用例** |
+
+## 下一迭代（I18）候选
+
+1. **块类型手动改判入口**（ADR-004 欠账）：右键改判 + anchor 持久化——表格识别仍会误判，先给兜底
+2. 行内公式结构层拆分（I19 主体）
+3. 真实 Key 全文校准 + 术语表（I20）
+
+---
+
 # I16 任务清单 · 公式检测补盲（修「部分公式仍被翻译」）
 
-> 当前迭代：**I16** · 状态：**已完成** · 小结见 [iterations/I16-summary.md](iterations/I16-summary.md)
+>  · 状态：**已完成** · 小结见 [iterations/I16-summary.md](iterations/I16-summary.md)
 > 样本：two-column / single-column / acl（三基线）
 
 ## 目标
@@ -37,7 +74,7 @@
 
 # I15 任务清单 · 标题提取 + 作者免译
 
-> 当前迭代：**I15** · 状态：**已完成** · 小结见 [iterations/I15-summary.md](iterations/I15-summary.md)
+>  · 状态：**已完成** · 小结见 [iterations/I15-summary.md](iterations/I15-summary.md)
 > 样本：two-column-sample.pdf（ResNet）、single-column-sample.pdf、acl-sample.pdf
 
 ## 目标
@@ -73,7 +110,7 @@
 
 # I14 任务清单 · 论文库：集合 + 标签（R2 完整形态）
 
-> 当前迭代：**I14** · 状态：**已完成** · 小结见 [iterations/I14-summary.md](iterations/I14-summary.md)
+>  · 状态：**已完成** · 小结见 [iterations/I14-summary.md](iterations/I14-summary.md)
 > 样本：two-column-sample.pdf（ResNet，端到端验证用）→ `fixtures/two-column-sample.pdf`
 
 ## 目标
