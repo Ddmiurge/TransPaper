@@ -12,8 +12,6 @@ export interface PageRenderResult {
   items: TextItem[];
   width: number;
   height: number;
-  /** page.getViewport({scale}).transform，供调试层换算坐标 */
-  viewportTransform: number[];
 }
 
 /**
@@ -125,6 +123,5 @@ export async function extractPageItems(
     items,
     width: viewport.width,
     height: viewport.height,
-    viewportTransform,
   };
 }

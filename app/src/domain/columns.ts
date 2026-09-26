@@ -54,7 +54,6 @@ export interface ColumnLayout {
   /** 栏边界，长度 = 栏数 + 1，首元素 0，末元素 pageWidth */
   boundaries: number[];
   /** 每栏包含的 item id */
-  itemIdsByColumn: string[][];
 }
 
 /** 检测栏缝位置。返回空数组表示判定为单栏。 */
@@ -163,7 +162,6 @@ export function assignColumns(
   pageWidth: number
 ): ColumnLayout {
   const boundaries = [0, ...splits, pageWidth];
-  const itemIdsByColumn: string[][] = boundaries.slice(0, -1).map(() => []);
 
   for (const item of items) {
     const centerX = item.bbox.x + item.bbox.width / 2;
@@ -175,8 +173,7 @@ export function assignColumns(
       }
     }
     item.columnIndex = columnIndex;
-    itemIdsByColumn[columnIndex].push(item.id);
   }
 
-  return { splits, boundaries, itemIdsByColumn };
+  return { splits, boundaries };
 }

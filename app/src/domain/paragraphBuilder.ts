@@ -380,7 +380,6 @@ export function buildParagraphs(
   if (lines.length === 0) return [];
 
   const medianLineHeight = median(lines.map((l) => l.bbox.height)) || 1;
-  const medianLineFontSize = median(lines.map((l) => l.fontSize)) || 1;
   const gaps: number[] = [];
   for (let i = 1; i < lines.length; i += 1) {
     gaps.push(lines[i].bbox.y - (lines[i - 1].bbox.y + lines[i - 1].bbox.height));
@@ -419,7 +418,6 @@ export function buildParagraphs(
   // ── 第二级：组内按缩进结构切分 ──
   const entries = groups.flatMap((group) => splitGroupIntoEntries(group, o));
 
-  void medianLineFontSize;
   return entries.map((group, index) => makeBlock(group, index, pageIndex));
 }
 

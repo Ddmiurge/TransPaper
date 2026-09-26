@@ -373,22 +373,3 @@ export function useTranslationsFor(keys: readonly string[]): ReadonlyMap<string,
   return useSyncExternalStore(translationStore.subscribe, getSnapshot);
 }
 
-/**
- * 只订阅某一段的译文。
- *
- * 便于零散使用（如面板里展示某段的告警）。返回值是原始值，引用天然稳定。
- */
-export function useBlockTranslation(blockId: string): string | null {
-  return useSyncExternalStore(
-    translationStore.subscribe,
-    () => translationStore.getSnapshot().byBlockId.get(blockId) ?? null
-  );
-}
-
-/** 只订阅某一段的质量告警 */
-export function useBlockWarning(blockId: string): string | null {
-  return useSyncExternalStore(
-    translationStore.subscribe,
-    () => translationStore.getSnapshot().warnings.get(blockId) ?? null
-  );
-}

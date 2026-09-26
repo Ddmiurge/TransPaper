@@ -248,12 +248,10 @@ export class LibraryStore {
   private async persistPaper(meta: PaperMeta): Promise<void> {
     const normalized = normalizeMeta(meta);
     await this.database.putMeta(normalized);
-    const rest = this.snapshot.papers.filter((p) => p.id !== normalized.id);
     // 不改变阅读顺序（lastOpenedAt 不变），只在原位替换
     this.patch({
       papers: this.snapshot.papers.map((p) => (p.id === normalized.id ? normalized : p)),
     });
-    void rest;
   }
 }
 
