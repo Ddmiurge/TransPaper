@@ -1,0 +1,1009 @@
+:root {
+  --bg: #0f1113;
+  --panel: #17191c;
+  --border: #2a2e33;
+  --text: #e6e8ea;
+  --muted: #9aa1a8;
+  --accent: #2dd4bf;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --ok: #34d399;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ── 工具栏 ── */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: center;
+  padding: 8px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar .group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar button {
+  padding: 4px 10px;
+  background: #22262b;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.toolbar button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.toolbar button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toolbar button.active {
+  background: #14413c;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.page-indicator {
+  min-width: 56px;
+  text-align: center;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 自检面板 ── */
+.report {
+  display: flex;
+  gap: 12px;
+  padding: 8px 14px;
+  background: #121417;
+  border-bottom: 1px solid var(--border);
+}
+
+.report-card {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.report-card h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.report-card ul {
+  margin: 0;
+  padding-left: 16px;
+  line-height: 1.7;
+}
+
+.report-card strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.ok {
+  color: var(--ok);
+}
+.warn {
+  color: var(--warn);
+}
+.bad {
+  color: var(--bad);
+}
+
+/* ── 阅读区 ── */
+.viewport {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+  background: #0a0c0e;
+}
+
+.paper {
+  margin: 0 auto;
+  width: fit-content;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+/* ── 文档流视图：单栏中英对照 ──
+ *
+ * 目标观感：像 LaTeX 编译出来的双语文档，而不是「网页上一段段带色的框」。
+ *
+ * 三条原则：
+ *   1. 原文与译文都是**普通段落**，用字色区分而不是用框。框会把阅读节奏打碎，
+ *      而中英对照真正需要的只是"一眼能分辨哪段是译文"。
+ *   2. 段落要有印刷体特征：首行缩进、两端对齐、合适的行宽（measure）。
+ *      首行缩进尤其重要 —— 没有它，段与段的边界只能靠空白猜。
+ *   3. 译文紧跟它的原文（间距小），换到下一组时拉开（间距大）。
+ *      这层间距承担了原先那个绿框的作用：把"一对"绑在一起，而不需要画框。
+ */
+
+:root {
+  /* 纸张与油墨：略暖的白，避免纯白的刺眼 */
+  --read-paper: #fdfdfb;
+  --read-ink: #15181d; /* 原文 */
+  --read-trans: #31536e; /* 译文：沉稳的蓝灰，明确但不喧宾夺主 */
+}
+
+.paper-flow {
+  padding: 52px 64px 72px;
+  background: var(--read-paper);
+}
+
+.page-flow {
+  display: block;
+  margin: 0 auto;
+  background: transparent;
+  color: var(--read-ink);
+  /* 西文走衬线（接近论文正文的观感），中文回退到宋体系 */
+  font-family: 'Times New Roman', 'Nimbus Roman No9 L', 'Songti SC', 'Source Han Serif SC',
+    'Noto Serif CJK SC', Georgia, serif;
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures;
+  text-rendering: optimizeLegibility;
+  line-height: 1.62;
+}
+
+.flow-slice {
+  display: block;
+  margin: 1.5em auto;
+}
+
+.flow-block {
+  display: block;
+  margin: 0 0 1.5em 0;
+}
+
+.flow-source {
+  margin: 0;
+  color: var(--read-ink);
+  line-height: 1.62;
+  font-weight: 400;
+  /* 印刷体段落：首行缩进 + 两端对齐。西文再开连字符断行，避免对齐后出现大片空隙 */
+  text-indent: 1.6em;
+  text-align: justify;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
+
+.flow-source.is-bold {
+  font-weight: 700;
+}
+
+/* 标题：不缩进、上下留白拉开、不两端对齐（短标题对齐会很难看） */
+.flow-source.is-heading {
+  text-indent: 0;
+  text-align: left;
+  margin: 0 0 0.6em 0;
+  line-height: 1.32;
+  letter-spacing: 0.01em;
+}
+
+.flow-block--heading {
+  margin: 2em 0 1.3em 0;
+}
+
+.flow-block:first-child,
+.flow-block--heading:first-child {
+  margin-top: 0;
+}
+
+.flow-target {
+  margin: 0.45em 0 0 0;
+  color: var(--read-trans);
+  /* 中文行距比西文松一些才不挤；首行缩进两字符是中文排版惯例 */
+  line-height: 1.8;
+  text-indent: 2em;
+  text-align: justify;
+}
+
+/* ── 原版式对照视图（保留，用于横向比较重排效果）── */
+
+.hint {
+  color: var(--muted);
+}
+
+.pdf-canvas {
+  display: block;
+}
+
+.loading,
+.error {
+  padding: 20px;
+  color: var(--muted);
+}
+
+.error {
+  color: var(--bad);
+}
+
+/* ── 覆盖层 ── */
+.layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* 调试层：文本项框 */
+.item-box {
+  position: absolute;
+  border: 0.5px solid rgba(56, 189, 248, 0.75);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+/* 调试层：段落框 */
+.block-box {
+  position: absolute;
+  border: 1px dashed;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.block-label {
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  padding: 0 3px;
+  font-size: 9px;
+  line-height: 12px;
+  color: #000;
+  border-radius: 2px 0 3px 0;
+}
+
+/* 调试层：栏缝 */
+.gutter-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1px dashed rgba(248, 113, 113, 0.9);
+}
+
+/* 对照层：译文 */
+.parallel-layer {
+  pointer-events: none;
+}
+
+.translation {
+  position: absolute;
+  padding: 2px 5px;
+  background: rgba(45, 212, 191, 0.16);
+  border-left: 2px solid rgba(45, 212, 191, 0.85);
+  color: #0b3b36;
+  line-height: 1.45;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.translation.collapsed {
+  max-height: 1.45em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ── 瀑布流：多页依次排列，向下滚动连续阅读 ── */
+.flow-page {
+  position: relative;
+  background: #fff;
+}
+
+/* 页与页之间的分隔：一条细虚线 + 居中的页码。
+   这是纸面文档里「页」的概念在连续滚动下的最小必要提示 ——
+   没有它，读者会分不清自己在第几页。 */
+.flow-page + .flow-page {
+  border-top: 1px dashed #d7dbe2;
+  margin-top: 34px;
+  padding-top: 6px;
+}
+
+.flow-page-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #98a2b3;
+  text-align: center;
+  padding: 8px 0 2px;
+  user-select: none;
+}
+
+.flow-page-placeholder {
+  color: #98a2b3;
+  font-size: 13px;
+  text-align: center;
+  padding: 56px 0;
+  margin: 0;
+}
+
+.flow-page-placeholder.bad {
+  color: #b42318;
+}
+
+/* ── 翻译工具栏 ── */
+/* 独占一整行：它承载的是「整篇文档」的动作与进度，和左边的翻页/缩放不是一类 */
+.translate-bar {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  position: relative;
+}
+
+.translate-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06231f;
+  font-weight: 600;
+}
+
+button.primary:disabled {
+  opacity: 0.45;
+}
+
+/* 未配置 Key 的提示点 */
+.dot-warn {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--warn);
+  vertical-align: middle;
+}
+
+.translate-status {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.translate-status .ok { color: var(--ok); }
+.translate-status .bad { color: var(--bad); }
+.translate-message { color: var(--text); }
+
+.progress-track {
+  flex-basis: 100%;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+
+.translate-errors {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.translate-errors summary {
+  cursor: pointer;
+}
+
+.translate-errors ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.translate-errors .bad { color: var(--bad); }
+
+/* ── 翻译设置面板 ── */
+.settings-panel {
+  flex-basis: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.settings-row > label:first-child {
+  min-width: 62px;
+  color: var(--muted);
+}
+
+.settings-row input[type='text'],
+.settings-row input[type='password'],
+.settings-row input[type='number'],
+.settings-row select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 4px 7px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.settings-row input[type='text'],
+.settings-row input[type='password'] {
+  flex: 1;
+  min-width: 160px;
+}
+
+.settings-row input[type='number'] {
+  width: 62px;
+}
+
+.settings-row code {
+  background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.settings-row .hint,
+.settings-panel .hint {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.settings-note {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+  background: rgba(251, 191, 36, 0.08);
+  border-left: 3px solid var(--warn);
+  border-radius: 0 4px 4px 0;
+}
+
+.settings-note strong {
+  color: var(--warn);
+}
+
+/* ── 不翻译的内容（参考文献、页码） ── */
+
+/* 悬挂缩进：首行顶格、续行缩进。
+   这正是原论文排参考文献的方式，照搬过来读者才能一眼认出「这是文献表」。
+   用的是 padding-left + text-indent 负值这个经典做法 —— 
+   单纯靠 margin 做不出「首行不缩进、其余行缩进」的效果。 */
+.flow-source.is-reference {
+  padding-left: 2em;
+  text-indent: -2em;
+  font-size: 0.94em;
+  line-height: 1.5;
+  text-align: left;
+  hyphens: none;
+}
+
+/* 组间距收紧：文献条目之间要紧一些，否则 52 条会拉得很长 */
+.flow-block:has(.flow-source.is-reference) {
+  margin-bottom: 0.5em;
+}
+
+/* 页码等页眉页脚内容：弱化显示，不参与阅读流 */
+.flow-source.is-untranslated:not(.is-reference) {
+  color: #98a2b3;
+  font-size: 0.85em;
+}
+
+/* ── 应用标识与当前文档 ── */
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-right: 14px;
+  margin-right: 4px;
+  border-right: 1px solid var(--border);
+}
+
+.brand-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+/* 文档名可能很长，截断而不是把工具栏挤变形 */
+.doc-name {
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 拖放 ── */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 17, 19, 0.72);
+  /* 覆盖层不能吃掉 drop 事件，否则永远收不到文件 */
+  pointer-events: none;
+  border: 3px dashed var(--accent);
+}
+
+.drop-hint {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--panel);
+  padding: 16px 30px;
+  border-radius: 8px;
+}
+
+/* 诊断面板默认隐藏（用 hidden 属性）。这里只处理它的间距 */
+.report[hidden] {
+  display: none;
+}
+
+/* ── 侧边栏（论文库，R2）── */
+
+/* 主体分栏：侧边栏 + 阅读区。
+   min-height: 0 是关键 —— flex 子元素默认不收缩内容，
+   没有它 viewport 的 overflow 滚动会失效、整页撑高 */
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.library {
+  width: 248px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.library-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 14px 8px;
+}
+
+.library-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.library-count {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.library-search {
+  margin: 0 12px 10px;
+  padding: 5px 9px;
+  font-size: 12px;
+  color: var(--text);
+  background: #16181b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.library-search:focus {
+  border-color: var(--accent);
+}
+
+.library-search::placeholder {
+  color: var(--muted);
+}
+
+.library-empty {
+  padding: 18px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.library-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 6px 12px;
+}
+
+.library-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.library-item:hover {
+  background: #22262b;
+}
+
+/* 当前打开的论文：左侧一道强调线比整块底色更轻 */
+.library-item.is-current {
+  background: #1d222b;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.library-item-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* 给右侧删除按钮留位 */
+  padding-right: 18px;
+}
+
+.library-item-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.library-item-delete {
+  position: absolute;
+  top: 8px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  /* 平时藏起来，悬停行时才出现 —— 列表不显得满是按钮 */
+  opacity: 0;
+}
+
+.library-item:hover .library-item-delete {
+  opacity: 1;
+}
+
+.library-item-delete:hover {
+  color: #e5484d;
+  background: #2a2226;
+}
+
+.library-item-confirm {
+  margin-top: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #fff;
+  background: #b3261e;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+/* ── I14：集合导航 ── */
+.library-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 8px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.library-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.library-nav-item:hover {
+  background: #22262b;
+  color: var(--text);
+}
+
+.library-nav-item.is-active {
+  background: #1d222b;
+  color: var(--text);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.library-nav-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-nav-count {
+  font-size: 10.5px;
+  color: var(--muted);
+  background: #16181b;
+  border-radius: 9px;
+  padding: 0 6px;
+  line-height: 16px;
+}
+
+.library-nav-del {
+  width: 15px;
+  height: 15px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--muted);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.library-nav-item:hover .library-nav-del {
+  opacity: 1;
+}
+
+.library-nav-del:hover {
+  color: #e5484d;
+}
+
+/* ── I14：标签 chips ── */
+.library-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.library-tag {
+  font-size: 10.5px;
+  color: var(--accent);
+  background: #16202b;
+  border-radius: 9px;
+  padding: 1px 7px;
+  line-height: 16px;
+}
+
+/* 分配菜单触发按钮（⋯） */
+.library-item-menu {
+  position: absolute;
+  top: 8px;
+  right: 26px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.library-item:hover .library-item-menu {
+  opacity: 1;
+}
+
+.library-item-menu:hover {
+  color: var(--text);
+  background: #2a2f36;
+}
+
+/* 分配菜单（归属集合 + 标签） */
+.library-menu {
+  position: absolute;
+  top: 30px;
+  right: 6px;
+  z-index: 20;
+  width: 196px;
+  padding: 8px 10px;
+  background: #1b1f24;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  cursor: default;
+}
+
+.library-menu-head {
+  font-size: 10.5px;
+  color: var(--muted);
+  margin: 4px 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.library-menu-colls {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.library-menu-chk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.library-menu-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.library-menu-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.library-menu-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  color: var(--accent);
+  background: #16202b;
+  border-radius: 9px;
+  padding: 1px 4px 1px 7px;
+  line-height: 16px;
+}
+
+.library-menu-tag-x {
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.library-menu-tag-x:hover {
+  color: #e5484d;
+}
+
+.library-menu-tagrow {
+  margin-top: 6px;
+}
+
+.library-menu-taginput {
+  width: 100%;
+  padding: 4px 7px;
+  font-size: 11.5px;
+  color: var(--text);
+  background: #16181b;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  outline: none;
+}
+
+.library-menu-taginput:focus {
+  border-color: var(--accent);
+}
+
+/* 新建集合输入 */
+.library-newcoll {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+
+.library-newcoll-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  color: var(--text);
+  background: #16181b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.library-newcoll-input:focus {
+  border-color: var(--accent);
+}
+
+.library-newcoll-btn {
+  width: 26px;
+  padding: 0;
+  font-size: 14px;
+  color: var(--text);
+  background: #22262b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.library-newcoll-btn:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+/* 工具栏里「论文库」开关的激活态 */
+.toolbar button.is-active {
+  color: var(--accent);
+  border-color: var(--accent);
+}

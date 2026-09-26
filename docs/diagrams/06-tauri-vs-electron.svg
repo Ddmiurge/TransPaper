@@ -1,0 +1,42 @@
+<svg viewBox="0 0 680 392" width="680" height="392" role="img" xmlns="http://www.w3.org/2000/svg" font-family="system-ui, -apple-system, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+<title>Electron 与 Tauri 的打包结构对比</title>
+<desc>Electron 把 Chromium 与 Node.js 打包进每个应用；Tauri 只打包 Rust 二进制和前端静态资源，渲染复用操作系统自带的 WebView。</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<rect x="0" y="0" width="680" height="392" fill="#FFFFFF"/>
+<rect x="40" y="40" width="290" height="260" rx="12" fill="#F7F6F3" stroke="#D3D1C7" stroke-width="0.5"/>
+<text x="56" y="62" font-size="12" fill="#444441" dominant-baseline="central">Electron · 安装包约 150 MB</text>
+
+<rect x="56" y="78" width="258" height="44" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text x="72" y="100" font-size="12" fill="#633806" dominant-baseline="central">Chromium 渲染引擎 · 打包</text>
+
+<rect x="56" y="132" width="258" height="44" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text x="72" y="154" font-size="12" fill="#633806" dominant-baseline="central">Node.js 运行时 · 打包</text>
+
+<rect x="56" y="186" width="258" height="44" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="72" y="208" font-size="12" fill="#0C447C" dominant-baseline="central">你的前端代码</text>
+
+<rect x="56" y="240" width="258" height="44" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="72" y="262" font-size="12" fill="#0C447C" dominant-baseline="central">你的后端代码 · JavaScript</text>
+
+<rect x="350" y="40" width="290" height="260" rx="12" fill="#F7F6F3" stroke="#D3D1C7" stroke-width="0.5"/>
+<text x="366" y="62" font-size="12" fill="#444441" dominant-baseline="central">Tauri 2 · 安装包约 3 - 12 MB</text>
+
+<rect x="366" y="78" width="258" height="44" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="382" y="100" font-size="12" fill="#085041" dominant-baseline="central">Rust 原生二进制 · 应用逻辑</text>
+
+<rect x="366" y="132" width="258" height="44" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="382" y="154" font-size="12" fill="#0C447C" dominant-baseline="central">前端 HTML / CSS / JS 静态资源</text>
+
+<rect x="366" y="186" width="258" height="98" rx="8" fill="none" stroke="#888780" stroke-width="0.5" stroke-dasharray="4 4"/>
+<text x="495" y="222" font-size="13" fill="#444441" text-anchor="middle" dominant-baseline="central">系统 WebView · 不打包</text>
+<text x="495" y="248" font-size="11" fill="#888780" text-anchor="middle" dominant-baseline="central">由操作系统提供，随系统更新</text>
+
+<rect x="40" y="320" width="600" height="52" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="340" y="336" font-size="12" fill="#3C3489" text-anchor="middle" dominant-baseline="central">Electron 每个应用自带一份 Chromium；Tauri 复用系统已有的 WebView</text>
+<text x="340" y="356" font-size="11" fill="#534AB7" text-anchor="middle" dominant-baseline="central">代价：三平台内核不同，渲染行为可能存在细微差异</text>
+</svg>
