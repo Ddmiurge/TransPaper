@@ -1,4 +1,5 @@
-import { median, unionBBox } from './stats';
+import { median } from './stats';
+import { unionBBox } from './bbox';
 import type { Block, TextItem, TextLine, TextSpan } from '../types';
 
 /**

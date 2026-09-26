@@ -61,29 +61,6 @@ export async function renderPageToOffscreen(page: any, scale: number): Promise<H
   return canvas;
 }
 
-/** 渲染页面到 canvas */
-export async function renderPageToCanvas(
-  page: any,
-  canvas: HTMLCanvasElement,
-  scale: number
-): Promise<void> {
-  const viewport = page.getViewport({ scale });
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('无法获取 canvas 2D 上下文');
-
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.floor(viewport.width * dpr);
-  canvas.height = Math.floor(viewport.height * dpr);
-  canvas.style.width = `${viewport.width}px`;
-  canvas.style.height = `${viewport.height}px`;
-
-  await page.render({
-    canvasContext: context,
-    viewport,
-    transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
-  }).promise;
-}
-
 /**
  * 提取一页的文本项并换算成 viewport 坐标。
  *

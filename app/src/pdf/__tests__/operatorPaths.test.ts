@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { geometryBoxesFromOperators, pathBoxesFromOperators, type OperatorIds } from '../operatorPaths';
+import { geometryBoxesFromOperators, type OperatorIds } from '../operatorPaths';
 
 /**
- * 这里的算子编号是**自造**的：`pathBoxesFromOperators` 刻意不 import pdf.js，
+ * 这里的算子编号是**自造**的：`geometryBoxesFromOperators` 刻意不 import pdf.js，
  * 编号由调用方传入，所以测试可以随便定。这样这个模块能在 Node 里纯逻辑地测，
  * 不必拉起 pdf.js 的浏览器构建。
  */
@@ -34,7 +34,7 @@ function ops(entries: Array<[number, any]>) {
   };
 }
 
-describe('pathBoxesFromOperators · 矩阵累乘方向', () => {
+describe('geometryBoxesFromOperators · 矩阵累乘方向', () => {
   /**
    * 这一组测试守的是一个**代价很大的历史 bug**：CTM 累乘写成了右乘。
    *
@@ -51,7 +51,7 @@ describe('pathBoxesFromOperators · 矩阵累乘方向', () => {
       [IDS.transform, [1, 0, 0, 1, 100, 200]],
       [IDS.constructPath, path(0, 0, 10, 20)],
     ]);
-    const boxes = pathBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS);
+    const boxes = geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS).paths;
     expect(boxes).toHaveLength(1);
     expect(boxes[0]).toMatchObject({ x: 100, y: 200, width: 10, height: 20 });
   });
@@ -66,7 +66,7 @@ describe('pathBoxesFromOperators · 矩阵累乘方向', () => {
       [IDS.transform, [2, 0, 0, 2, 0, 0]],
       [IDS.constructPath, path(0, 0, 1, 1)],
     ]);
-    const [box] = pathBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS);
+    const [box] = geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS).paths;
     expect(box.x).toBeCloseTo(100, 6);
     expect(box.y).toBeCloseTo(200, 6);
     expect(box.width).toBeCloseTo(2, 6);
@@ -84,7 +84,7 @@ describe('pathBoxesFromOperators · 矩阵累乘方向', () => {
       [IDS.constructPath, path(0, 0, 172, 107.1)],
       [IDS.paintFormXObjectEnd, null],
     ]);
-    const [box] = pathBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS);
+    const [box] = geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS).paths;
     expect(box.x).toBeCloseTo(308.9, 4);
     expect(box.y).toBeCloseTo(489.3, 4);
     // 尺寸被 0.73143 缩放
@@ -93,7 +93,7 @@ describe('pathBoxesFromOperators · 矩阵累乘方向', () => {
   });
 });
 
-describe('pathBoxesFromOperators · save / restore', () => {
+describe('geometryBoxesFromOperators · save / restore', () => {
   it('restore 之后回到 save 时的矩阵状态', () => {
     const list = ops([
       [IDS.transform, [1, 0, 0, 1, 100, 200]],
@@ -103,7 +103,7 @@ describe('pathBoxesFromOperators · save / restore', () => {
       [IDS.restore, null],
       [IDS.constructPath, path(0, 0, 1, 1)], // 回到只有平移的空间
     ]);
-    const boxes = pathBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS);
+    const boxes = geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS).paths;
     expect(boxes).toHaveLength(2);
     expect(boxes[0]).toMatchObject({ x: 100, y: 200, width: 2, height: 2 });
     expect(boxes[1]).toMatchObject({ x: 100, y: 200, width: 1, height: 1 });
@@ -115,17 +115,17 @@ describe('pathBoxesFromOperators · save / restore', () => {
       [IDS.transform, [1, 0, 0, 1, 5, 5]],
       [IDS.constructPath, path(0, 0, 1, 1)],
     ]);
-    const [box] = pathBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS);
+    const [box] = geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS).paths;
     expect(box).toMatchObject({ x: 5, y: 5 });
   });
 });
 
-describe('pathBoxesFromOperators · 视口变换', () => {
+describe('geometryBoxesFromOperators · 视口变换', () => {
   it('最后一个矩阵是视口变换（v_viewport = v_user × CTM × viewportTransform）', () => {
     // 真实视口变换：scale 1.5 + y 轴翻转（PDF 原点在左下，视口原点在左上）
     const viewport = [1.5, 0, 0, -1.5, 0, 1188];
     const list = ops([[IDS.constructPath, path(0, 0, 100, 100)]]);
-    const [box] = pathBoxesFromOperators(list, viewport, IDS);
+    const [box] = geometryBoxesFromOperators(list, viewport, IDS).paths;
     // x: 0 → 0, 100 → 150
     expect(box.x).toBeCloseTo(0, 6);
     expect(box.width).toBeCloseTo(150, 6);
@@ -135,20 +135,20 @@ describe('pathBoxesFromOperators · 视口变换', () => {
   });
 });
 
-describe('pathBoxesFromOperators · 边界情况', () => {
+describe('geometryBoxesFromOperators · 边界情况', () => {
   it('minMax 缺失或含非有限值时跳过该条路径', () => {
     const list = ops([
       [IDS.constructPath, [null, null, null]],
       [IDS.constructPath, [null, null, new Float32Array([0, 0, NaN, 10])]],
       [IDS.constructPath, path(0, 0, 10, 10)],
     ]);
-    const boxes = pathBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS);
+    const boxes = geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS).paths;
     expect(boxes).toHaveLength(1);
   });
 
   it('没有路径时返回空数组', () => {
     const list = ops([[IDS.save, null], [IDS.restore, null]]);
-    expect(pathBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS)).toEqual([]);
+    expect(geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS).paths).toEqual([]);
   });
 });
 
@@ -191,13 +191,13 @@ describe('geometryBoxesFromOperators · 位图放置框', () => {
     expect(images[1]).toMatchObject({ x: 0, y: 0, width: 1, height: 1 });
   });
 
-  it('pathBoxesFromOperators 兼容包装只返回矢量路径', () => {
+  it('只返回矢量路径，不含位图', () => {
     const list = ops([
       [IDS.transform, [2, 0, 0, 2, 100, 200]],
       [IDS.paintImageXObject!, ['Im1', 300, 200]],
       [IDS.constructPath, path(0, 0, 10, 20)],
     ]);
-    const boxes = pathBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS);
+    const boxes = geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS).paths;
     expect(boxes).toHaveLength(1);
     // 路径坐标也要过 CTM：(0,0)-(10,20) × 缩放2 + 平移 → 宽 20 高 40
     expect(boxes[0]).toMatchObject({ x: 100, y: 200, width: 20, height: 40 });

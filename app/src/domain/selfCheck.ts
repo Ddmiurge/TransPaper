@@ -1,3 +1,4 @@
+import { coveredColumnIndexes } from './columns';
 import { median } from './stats';
 import type { Block, PageAnalysis } from '../types';
 
@@ -51,13 +52,7 @@ const OVERLAP_TOLERANCE = 2;
  * 但它从 230 开始横跨到 662，实际占了 2 栏。这是个分类错误，不是渲染错误。
  */
 function columnsCovered(block: Block, boundaries: number[]): number {
-  const left = block.bbox.x;
-  const right = block.bbox.x + block.bbox.width;
-  let count = 0;
-  for (let k = 0; k < boundaries.length - 1; k += 1) {
-    if (left < boundaries[k + 1] && right > boundaries[k]) count += 1;
-  }
-  return count;
+  return coveredColumnIndexes(block.bbox, boundaries).length;
 }
 
 export function selfCheck(analysis: PageAnalysis): SelfCheckReport {

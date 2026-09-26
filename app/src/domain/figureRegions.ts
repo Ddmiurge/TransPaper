@@ -1,4 +1,5 @@
 import type { BBox, Block } from '../types';
+import { intersects, unionBBox, coverageRatio } from './bbox';
 
 /**
  * 图形区域：从页面的**矢量路径**中挑出「属于图表的那部分」。
@@ -41,15 +42,6 @@ export const DEFAULT_FIGURE_REGION_OPTIONS: FigureRegionOptions = {
   skipClusterAbove: 1500,
 };
 
-function intersects(a: BBox, b: BBox): boolean {
-  return (
-    a.x <= b.x + b.width &&
-    b.x <= a.x + a.width &&
-    a.y <= b.y + b.height &&
-    b.y <= a.y + a.height
-  );
-}
-
 function expand(box: BBox, pad: number): BBox {
   return {
     x: box.x - pad,
@@ -91,7 +83,7 @@ export function figureClusters(
   return groups
     .filter((members) => members.length >= o.minPathsPerCluster)
     .map((members) => ({
-      bbox: unionOf(members.map((i) => paths[i])),
+      bbox: unionBBox(members.map((i) => paths[i])),
       pathCount: members.length,
     }));
 }
@@ -132,15 +124,6 @@ function clusterIndexes(paths: BBox[], o: FigureRegionOptions): number[][] {
   }
   return [...byRoot.values()];
 }
-
-function unionOf(boxes: BBox[]): BBox {
-  const left = Math.min(...boxes.map((b) => b.x));
-  const top = Math.min(...boxes.map((b) => b.y));
-  const right = Math.max(...boxes.map((b) => b.x + b.width));
-  const bottom = Math.max(...boxes.map((b) => b.y + b.height));
-  return { x: left, y: top, width: right - left, height: bottom - top };
-}
-
 /**
  * 从页面的全部路径包围盒中，筛出属于图形的**逐条路径**。
  *
@@ -258,14 +241,6 @@ export function expandRegionsToText(
 ): BBox[] {
   if (regions.length === 0) return [];
 
-  const merge = (a: BBox, b: BBox): BBox => {
-    const left = Math.min(a.x, b.x);
-    const top = Math.min(a.y, b.y);
-    const right = Math.max(a.x + a.width, b.x + b.width);
-    const bottom = Math.max(a.y + a.height, b.y + b.height);
-    return { x: left, y: top, width: right - left, height: bottom - top };
-  };
-
   const near = (a: BBox, b: BBox, pad: number) =>
     a.x <= b.x + b.width + pad &&
     b.x <= a.x + a.width + pad &&
@@ -286,7 +261,7 @@ export function expandRegionsToText(
     for (const item of candidates) {
       const idx = current.findIndex((r) => near(r, item.bbox, o.pad));
       if (idx < 0) continue;
-      const merged = merge(current[idx], item.bbox);
+      const merged = unionBBox([current[idx], item.bbox]);
       if (grows(current[idx], merged)) {
         current[idx] = merged;
         changed = true;
@@ -327,18 +302,11 @@ export function remarkBodyBlocksInsideRegions(
 ): number {
   if (regions.length === 0) return 0;
 
-  const coverageOf = (bbox: BBox, region: BBox): number => {
-    const w = Math.min(bbox.x + bbox.width, region.x + region.width) - Math.max(bbox.x, region.x);
-    const h = Math.min(bbox.y + bbox.height, region.y + region.height) - Math.max(bbox.y, region.y);
-    if (w <= 0 || h <= 0) return 0;
-    return (w * h) / (bbox.width * bbox.height);
-  };
-
   let count = 0;
   for (const block of blocks) {
     // 公式块是正文流的有意成员（见 ADR-013），区域重标记不碰它
     if (!block.isBodyText || block.formula) continue;
-    const covered = regions.some((r) => coverageOf(block.bbox, r) >= minCoverage);
+    const covered = regions.some((r) => coverageRatio(block.bbox, r) >= minCoverage);
     if (!covered) continue;
     block.isBodyText = false;
     block.figureReason = 'graphics-region';

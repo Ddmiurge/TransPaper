@@ -6,11 +6,11 @@ import {
   type FigureRegionOptions,
 } from './figureRegions';
 import { buildParagraphs, groupIntoLines, type ParagraphBuildOptions } from './paragraphBuilder';
-import { unionBBox } from './stats';
 import { markFormulas } from './formulas';
 import { markReferences } from './references';
 import { markFrontMatter } from './frontMatter';
 import { detectTableRegions } from './tables';
+import { coverageRatio, mergeOverlapping, unionBBox } from './bbox';
 import { analyzeTextStyle, refineBodyFontSize, type TextStyleOptions } from './textStyle';
 import type { BBox, Block, PageAnalysis, Segment, TextItem, TextLine } from '../types';
 
@@ -176,12 +176,7 @@ export function analyzePage(input: AnalyzeInput): PageAnalysis {
   const tableBoxes = tableRegions.map((r) => r.bbox);
   for (const block of blocks) {
     if (!block.isBodyText || block.formula) continue;
-    const covered = tableBoxes.some((r) => {
-      const w = Math.min(block.bbox.x + block.bbox.width, r.x + r.width) - Math.max(block.bbox.x, r.x);
-      const h = Math.min(block.bbox.y + block.bbox.height, r.y + r.height) - Math.max(block.bbox.y, r.y);
-      if (w <= 0 || h <= 0) return false;
-      return (w * h) / (block.bbox.width * block.bbox.height) >= 0.5;
-    });
+    const covered = tableBoxes.some((r) => coverageRatio(block.bbox, r) >= 0.5);
     if (!covered) continue;
     block.isBodyText = false;
     block.figureReason = 'table-region';
@@ -212,7 +207,7 @@ export function analyzePage(input: AnalyzeInput): PageAnalysis {
 
   // 位图框与路径簇可能描述同一个图（位图图表 + 矢量坐标轴），
   // 重叠的区域先合并，否则会产出两片互相重叠的切片
-  const regionCandidates = mergeOverlappingBoxes([
+  const regionCandidates = mergeOverlapping([
     ...figureClusters(options.rawPaths ?? [], options.figureCluster)
       .filter((c) => c.pathCount >= MIN_PATHS_PER_FIGURE)
       .map((c) => c.bbox),
@@ -236,34 +231,6 @@ export function analyzePage(input: AnalyzeInput): PageAnalysis {
   // 而标签被移出正文流之后，正文字号的众数才有机会算对（见 refine 的注释）。
   remarkBodyBlocksInsideRegions(blocks, figureRegions, style.bodyBlockIds);
   refineBodyFontSize(blocks, style);
-
-  /** 合并互相重叠的包围盒（一遍扫描 + 重复直到稳定；区域数量很小，不值得更聪明） */
-function mergeOverlappingBoxes(boxes: BBox[]): BBox[] {
-  const out = [...boxes];
-  let merged = true;
-  while (merged) {
-    merged = false;
-    outer: for (let i = 0; i < out.length; i += 1) {
-      for (let j = i + 1; j < out.length; j += 1) {
-        const a = out[i];
-        const b = out[j];
-        const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
-        const h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
-        if (w <= 0 || h <= 0) continue;
-        out[i] = {
-          x: Math.min(a.x, b.x),
-          y: Math.min(a.y, b.y),
-          width: Math.max(a.x + a.width, b.x + b.width) - Math.min(a.x, b.x),
-          height: Math.max(a.y + a.height, b.y + b.height) - Math.min(a.y, b.y),
-        };
-        out.splice(j, 1);
-        merged = true;
-        break outer;
-      }
-    }
-  }
-  return out;
-}
 
 const segments: Segment[] = blocks.map((block) => ({
     id: `seg-${block.id}`,

@@ -1,34 +1,19 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import fixtureUrl from '../fixtures/two-column-sample.pdf?url';
-import { DebugLayer } from './components/DebugLayer';
 import { LibrarySidebar } from './components/LibrarySidebar';
 import { libraryStore } from './library/libraryStore';
 import type { PaperMeta } from './library/types';
 import { PageFlowBlock, type PageReadyInfo } from './components/PageFlowBlock';
 import type { FlowMeasurement } from './components/PageFlowView';
-import { ParallelLayer } from './components/ParallelLayer';
-import { buildPageFlow, type PageFlow } from './domain/pageFlow';
-import { figurePathBoxes, isEnclosedByGraphics } from './domain/figureRegions';
 import { analyzePage } from './domain/pipeline';
 import { findTitleBlock } from './domain/frontMatter';
 import { selfCheck, type SelfCheckReport } from './domain/selfCheck';
-import { mockTranslate } from './mock/translations';
 import { TranslationBar } from './components/TranslationBar';
-import { translationStore, useTranslationsFor } from './state/translationStore';
-import { useTranslationSettings } from './state/translationSettings';
-import { canvasHasInk } from './pdf/canvasUtils';
-import {
-  extractPageItems,
-  loadPdf,
-  renderPageToCanvas,
-  renderPageToOffscreen,
-} from './pdf/pdfjsAdapter';
-import { extractPathBoxes } from './pdf/vectorGraphics';
-import type { BBox, Block, PageAnalysis, Segment } from './types';
+import { translationStore } from './state/translationStore';
+import { extractPageItems, loadPdf } from './pdf/pdfjsAdapter';
+import type { PageAnalysis } from './types';
 
-/** 原版式视图里译文与原文段落下缘的间距 */
-const OVERLAY_GAP = 2;
 const BASE_SCALE = 1.5;
 
 /**
@@ -70,8 +55,6 @@ async function extractDocTitle(doc: any): Promise<string | null> {
 }
 /** 正文 HTML 字号相对 PDF 正文字号的放大倍率（屏幕阅读比纸面需要更大字号） */
 const FONT_BOOST = 1.25;
-/** 稳定的空 Map —— 每次渲染都新建会让下游的 useMemo 白算 */
-const EMPTY_TRANSLATIONS: ReadonlyMap<string, string> = new Map();
 
 /**
  * 文档来源。
@@ -105,18 +88,7 @@ function initialDocSource(): DocSource {
  * 判定「文字被图形夹住」时允许的最大距离（PDF 点）。
  * 表格行线紧贴文字（实测 2–3pt）；图形与正文之间的留白远大于此（实测 20pt+）。
  */
-const FIGURE_MAX_DISTANCE = 3;
-
-interface OverlayCheck {
-  measured: number;
-  overlapped: number;
-  maxOverflowPx: number;
-  medianTranslationHeight: number;
-  medianAvailableGap: number;
-}
-
 type Status = 'loading' | 'ready' | 'error';
-type ViewMode = 'flow' | 'overlay';
 
 /**
  * 初始页码。支持 `?page=N`，便于自动化验证脚本直接定位到特定版式的页面
@@ -129,10 +101,7 @@ function initialPageNumber(): number {
 }
 
 export default function App() {
-  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const overlayContainerRef = useRef<HTMLDivElement | null>(null);
   const pdfRef = useRef<any>(null);
-  const runIdRef = useRef(0);
 
   const [numPages, setNumPages] = useState(0);
   const [source, setSource] = useState<DocSource>(initialDocSource);
@@ -188,16 +157,10 @@ export default function App() {
   const [docReadingWidth, setDocReadingWidth] = useState(0);
   const [scale, setScale] = useState(BASE_SCALE);
   const [status, setStatus] = useState<Status>('loading');
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const [analysis, setAnalysis] = useState<PageAnalysis | null>(null);
   const [report, setReport] = useState<SelfCheckReport | null>(null);
-  const [offscreen, setOffscreen] = useState<HTMLCanvasElement | null>(null);
-  /** 本页图形路径的包围盒，供文档流裁切与「图形覆盖」自检使用 */
-  const [figurePaths, setFigurePaths] = useState<BBox[]>([]);
-  /** 跨栏的图形区域：作为整体裁切，避免被栏缝劈成两半 */
-  const [figureRegions, setSpanningFigures] = useState<BBox[]>([]);
   /**
    * 图形路径坐标的可信度：路径框里真的有墨迹的比例。
    *
@@ -206,19 +169,8 @@ export default function App() {
    * 坐标不可信时宁可不做「图形区域补刀」，也不要拿错几何去判定文字。
    */
   const [geometryConfidence, setGeometryConfidence] = useState(1);
-  // `?view=overlay` 直接以原版式打开 —— 排查「重排后与原文是否一致」时，
-  // 需要一个能立刻切到原版式的入口，而不是手动点按钮
-  const [viewMode, setViewMode] = useState<ViewMode>(() =>
-    new URLSearchParams(window.location.search).get('view') === 'overlay' ? 'overlay' : 'flow'
-  );
 
-  const [overlayCheck, setOverlayCheck] = useState<OverlayCheck | null>(null);
   const [flowMeasure, setFlowMeasure] = useState<FlowMeasurement | null>(null);
-
-  const [showItems, setShowItems] = useState(false);
-  const [showBlocks, setShowBlocks] = useState(false);
-  const [showColumns, setShowColumns] = useState(true);
-  const [collapsed, setCollapsed] = useState(false);
 
   const handleMeasured = useCallback((m: FlowMeasurement) => setFlowMeasure(m), []);
 
@@ -298,7 +250,7 @@ export default function App() {
    * 会同时报告多个页相交，反而更难判断「当前页」。
    */
   useEffect(() => {
-    if (viewMode !== 'flow' || numPages === 0) return;
+    if (numPages === 0) return;
     const viewport = document.querySelector('.viewport');
     if (!viewport) return;
 
@@ -318,7 +270,7 @@ export default function App() {
     // 页面高度会随各页陆续解析而增长，所以每次放开新页都重新对一次
     syncFromScroll();
     return () => viewport.removeEventListener('scroll', syncFromScroll);
-  }, [viewMode, numPages, readyUpTo]);
+  }, [numPages, readyUpTo]);
 
   /**
    * `?page=N` 深链接：直接滚到该页。
@@ -327,7 +279,7 @@ export default function App() {
    * 但视口仍停在第 1 页顶部 —— 深链接等于失效。
    */
   useEffect(() => {
-    if (status !== 'ready' || viewMode !== 'flow') return;
+    if (status !== 'ready') return;
     const target = pageNumber;
     if (target <= 1) return;
     const timer = window.setTimeout(() => {
@@ -336,7 +288,7 @@ export default function App() {
     return () => window.clearTimeout(timer);
     // 只在文档就绪时执行一次；后续跳页由 goToPage 负责滚动
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, viewMode]);
+  }, [status]);
 
   /** 跳页：瀑布流下滚到目标页，并放开它的加载 */
   const goToPage = useCallback(
@@ -346,7 +298,6 @@ export default function App() {
       // 阅读位置持久化 —— 关掉应用再回来能回到这一页。
       // IndexedDB 小写入很便宜，不值得为此做防抖
       if (currentPaperId) void libraryStore.setProgress(currentPaperId, clamped);
-      if (viewMode !== 'flow') return;
       setReadyUpTo((v) => (clamped - 1 > v ? clamped - 1 : v));
       // 目标页的 section 即便还没解析也已经存在（占位），所以可以立刻滚过去
       requestAnimationFrame(() => {
@@ -355,7 +306,7 @@ export default function App() {
           ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     },
-    [numPages, viewMode, currentPaperId]
+    [numPages, currentPaperId]
   );
 
   /** 从侧边栏打开一篇库里的论文 */
@@ -377,59 +328,6 @@ export default function App() {
     },
     []
   );
-
-  // ── 译文来源：段落级缓存 + 真实模型（见 state/translationStore.ts）──
-  // 这里只负责「原版式」视图与调试面板；瀑布流的每一页各取自己那几个块，
-  // 避免一段译文到达就让所有已加载页重渲染。
-  const overlayBlockIds = useMemo(
-    () =>
-      analysis
-        ? analysis.blocks.filter((b) => b.isBodyText && b.translatable).map((b) => b.id)
-        : [],
-    [analysis]
-  );
-
-  useEffect(() => {
-    if (!analysis) return;
-    translationStore.register(
-      analysis.blocks
-        .filter((b) => b.isBodyText && b.translatable)
-        .map((b) => ({ id: b.id, text: b.text }))
-    );
-  }, [analysis]);
-
-  const realTranslations = useTranslationsFor(overlayBlockIds);
-  const { previewMode } = useTranslationSettings();
-
-  const translations = useMemo(() => {
-    if (!analysis) return EMPTY_TRANSLATIONS;
-    if (!previewMode) return realTranslations;
-    const map = new Map<string, string>();
-    for (const block of analysis.blocks) {
-      if (!block.isBodyText) continue;
-      map.set(block.id, realTranslations.get(block.id) ?? mockTranslate(block.text));
-    }
-    return map;
-  }, [analysis, realTranslations, previewMode]);
-
-  // 注入「该区域有没有墨水」的判断：纯空白的填充区不生成图像节点，间距交给 CSS
-  const hasContent = useCallback(
-    (bbox: BBox) => (offscreen ? canvasHasInk(offscreen, bbox) : true),
-    [offscreen]
-  );
-
-  const flow: PageFlow | null = useMemo(() => {
-    if (!analysis) return null;
-    return buildPageFlow(analysis, translations, { hasContent, figurePaths, figureRegions });
-  }, [analysis, translations, hasContent, figurePaths, figureRegions]);
-
-  const segments: Segment[] = useMemo(() => {
-    if (!analysis) return [];
-    return analysis.segments.map((s) => ({
-      ...s,
-      translation: translations.get(s.blockIds[0]) ?? null,
-    }));
-  }, [analysis, translations]);
 
   // ── 论文库初始化 + 启动恢复 ──
   useEffect(() => {
@@ -524,159 +422,6 @@ export default function App() {
     // libraryReady 必须在依赖里：守卫 return 之后，靠它从 false → true 触发真正的加载
   }, [source, libraryReady]);
 
-  // ── 渲染 + 提取 + 分析 ──
-  useEffect(() => {
-    // 重排视图已经交给瀑布流（每个 PageFlowBlock 各自负责一页），
-    // 这个单页流水线只服务「原版式」视图与调试面板。
-    if (viewMode !== 'overlay') return;
-    if (status !== 'ready' || !pdfRef.current) return;
-    const runId = ++runIdRef.current;
-    let cancelled = false;
-    setBusy(true);
-
-    (async () => {
-      try {
-        const page = await pdfRef.current.getPage(pageNumber);
-        if (cancelled || runId !== runIdRef.current) return;
-
-        const off = await renderPageToOffscreen(page, scale);
-        if (cancelled || runId !== runIdRef.current) return;
-
-        const canvas = overlayCanvasRef.current;
-        if (canvas) await renderPageToCanvas(page, canvas, scale);
-        if (cancelled || runId !== runIdRef.current) return;
-
-        const extracted = await extractPageItems(page, pageNumber - 1, scale);
-        if (cancelled || runId !== runIdRef.current) return;
-
-        // 图形区域（矢量路径聚类）—— 用来判定「字号模糊区间」的块是否属于图内文字
-        const rawPaths = await extractPathBoxes(page, scale);
-        if (cancelled || runId !== runIdRef.current) return;
-
-        // 坐标可信度自检：路径框里应当有墨迹。
-        //
-        // 探测前先把框外扩几像素 —— 路径框常常只有 1px 宽（细线），
-        // 而采样是每 4 个像素取一个点，竖线很容易被整条跳过，
-        // 于是坐标本来正确的页面也会被判成不可信（实测第 5 页因此被误判为 16%）。
-        const PATH_PROBE_PAD = 3;
-        const inked = rawPaths.filter((box) =>
-          canvasHasInk(
-            off,
-            {
-              x: box.x - PATH_PROBE_PAD,
-              y: box.y - PATH_PROBE_PAD,
-              width: box.width + PATH_PROBE_PAD * 2,
-              height: box.height + PATH_PROBE_PAD * 2,
-            },
-            236
-          )
-        ).length;
-        const confidence = rawPaths.length === 0 ? 1 : inked / rawPaths.length;
-        const trusted = confidence >= 0.5;
-
-        const paths = trusted ? figurePathBoxes(rawPaths) : [];
-
-        const result = analyzePage({
-          pageIndex: pageNumber - 1,
-          width: extracted.width,
-          height: extracted.height,
-          items: extracted.items,
-          options: {
-            // 只在字号判不出来的模糊区间会被调用。用的是图形自身的几何边界，
-            // 与渲染缩放无关，因此结果稳定、不随缩放漂移。
-            rawPaths,
-            isInsideFigure: (bbox) =>
-              isEnclosedByGraphics(bbox, paths, FIGURE_MAX_DISTANCE * scale),
-          },
-        });
-        if (cancelled || runId !== runIdRef.current) return;
-
-        setAnalysis(result);
-        setReport(selfCheck(result));
-        setOffscreen(off);
-        // 文字表格矩形并入切片几何（I17）：表格没有矢量路径，
-        // 不并入则空隙切图不发生 —— 与位图框（I13）同一类坑
-        setFigurePaths(paths.concat(result.tableRegions.map((t) => t.bbox)));
-        setGeometryConfidence(confidence);
-
-        // 图形区域统一取域层算好的那份（路径簇 + 位图框 + 表格矩形，
-        // 已扩展到包住图内文字）。跨栏判定交给 pageFlow 的域层逻辑 ——
-        // 这里自己再筛一遍「跨栏」等于把同一份几何算两遍，迟早漂移。
-        setSpanningFigures(result.figureRegions);
-        setBusy(false);
-      } catch (e) {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : String(e));
-        setStatus('error');
-        setBusy(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [status, pageNumber, scale]);
-
-  // ── 原版式视图的重叠测量（仅用于和 I0 对照）──
-  useLayoutEffect(() => {
-    if (viewMode !== 'overlay' || !analysis || segments.length === 0) return;
-    const container = overlayContainerRef.current;
-    if (!container) return;
-
-    const byColumn = new Map<number, Block[]>();
-    for (const block of analysis.blocks) {
-      const list = byColumn.get(block.columnIndex) ?? [];
-      list.push(block);
-      byColumn.set(block.columnIndex, list);
-    }
-    for (const list of byColumn.values()) list.sort((a, b) => a.readOrder - b.readOrder);
-
-    const heights: number[] = [];
-    const gaps: number[] = [];
-    let measured = 0;
-    let overlapped = 0;
-    let maxOverflow = 0;
-
-    for (const segment of segments) {
-      const el = container.querySelector<HTMLElement>(`[data-segment="${segment.id}"]`);
-      if (!el) continue;
-      const block = analysis.blocks.find((b) => b.id === segment.blockIds[0]);
-      if (!block) continue;
-      const column = byColumn.get(block.columnIndex) ?? [];
-      const index = column.findIndex((b) => b.id === block.id);
-      const next = column[index + 1];
-
-      const height = el.offsetHeight;
-      measured += 1;
-      heights.push(height);
-      if (!next) continue;
-
-      const available = next.bbox.y - (block.bbox.y + block.bbox.height);
-      gaps.push(available);
-      const overflow = height - available;
-      if (overflow > 0) {
-        overlapped += 1;
-        if (overflow > maxOverflow) maxOverflow = overflow;
-      }
-    }
-
-    const median = (values: number[]) => {
-      if (values.length === 0) return 0;
-      const sorted = [...values].sort((a, b) => a - b);
-      const mid = sorted.length >> 1;
-      return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
-    };
-
-    setOverlayCheck({
-      measured,
-      overlapped,
-      maxOverflowPx: Math.round(maxOverflow),
-      medianTranslationHeight: Math.round(median(heights)),
-      medianAvailableGap: Math.round(median(gaps)),
-    });
-  }, [viewMode, analysis, segments, scale, collapsed]);
-
-  const overlayFontSize = (report?.medianFontSize ?? 10) * 0.92;
   const flowFontSize = (analysis?.bodyFontSize ?? 10) * FONT_BOOST;
 
   return (
@@ -729,7 +474,7 @@ export default function App() {
           </button>
           <span className="page-indicator">
             {pageNumber} / {numPages || '—'}
-            {viewMode === 'flow' && numPages > 0 && readyUpTo < numPages && (
+            {numPages > 0 && readyUpTo < numPages && (
               <span className="hint"> · 已解析 {readyUpTo}</span>
             )}
           </span>
@@ -759,42 +504,6 @@ export default function App() {
             </button>
           ))}
         </div>
-
-        <div className="group">
-          <button type="button" className={viewMode === 'flow' ? 'active' : ''} onClick={() => setViewMode('flow')}>
-            重排对照
-          </button>
-          <button
-            type="button"
-            className={viewMode === 'overlay' ? 'active' : ''}
-            onClick={() => setViewMode('overlay')}
-          >
-            原版式
-          </button>
-        </div>
-
-        {viewMode === 'overlay' && (
-          <div className="group">
-            <label>
-              <input type="checkbox" checked={showBlocks} onChange={(e) => setShowBlocks(e.target.checked)} />
-              段落框
-            </label>
-            <label>
-              <input type="checkbox" checked={showItems} onChange={(e) => setShowItems(e.target.checked)} />
-              文本项框
-            </label>
-            <label>
-              <input type="checkbox" checked={showColumns} onChange={(e) => setShowColumns(e.target.checked)} />
-              栏缝
-            </label>
-            <label>
-              <input type="checkbox" checked={collapsed} onChange={(e) => setCollapsed(e.target.checked)} />
-              折叠译文
-            </label>
-          </div>
-        )}
-
-        {busy && <span className="page-indicator">处理中…</span>}
 
         {/* 翻译是整篇文档的动作，不是每页独立的事 —— 所以工具栏放在瀑布流外层 */}
         <TranslationBar />
@@ -852,7 +561,7 @@ export default function App() {
               */}
               {analysis.items.length === 0 && (
                 <li className="bad">
-                  本页没有文本层 —— 可能是扫描版 PDF。当前版本不支持 OCR，只能以原版式查看。
+                  本页没有文本层 —— 可能是扫描版 PDF。当前版本不支持 OCR，内容将以原始版式的图像呈现。
                 </li>
               )}
             </ul>
@@ -863,7 +572,7 @@ export default function App() {
 
         <div className="report-card">
           <h3>重排结果</h3>
-          {flowMeasure && flow ? (
+          {flowMeasure ? (
             <ul>
               <li>
                 可选中段落 <strong className="ok">{flowMeasure.selectableParagraphs}</strong> · 图像切片{' '}
@@ -880,23 +589,6 @@ export default function App() {
             <p>等待渲染…</p>
           )}
         </div>
-
-        <div className="report-card">
-          <h3>I0 原版式对照</h3>
-          {overlayCheck ? (
-            <ul>
-              <li>
-                压住下一段{' '}
-                <strong className={overlayCheck.overlapped ? 'bad' : 'ok'}>{overlayCheck.overlapped}</strong> /{' '}
-                {overlayCheck.measured}
-              </li>
-              <li>最大溢出 {overlayCheck.maxOverflowPx} px</li>
-              <li className="hint">重排视图不存在此问题——译文在文档流里，不覆盖原文</li>
-            </ul>
-          ) : (
-            <p>切到「原版式」后测量</p>
-          )}
-        </div>
       </section>
 
       {sidebarOpen && (
@@ -907,7 +599,7 @@ export default function App() {
         {status === 'error' && <div className="error">加载失败：{error}</div>}
         {status === 'loading' && <div className="loading">正在加载 PDF…</div>}
 
-        {viewMode === 'flow' && doc && numPages > 0 && (
+        {doc && numPages > 0 && (
           <div className="paper paper-flow">
             {/* 瀑布流：全部页面依次排列，向下滚动即可连续阅读，
                 不必再一页页点「下一页」。每页只在自己的 enabled 为真时才开始解析。 */}
@@ -931,26 +623,6 @@ export default function App() {
           </div>
         )}
 
-        <div
-          ref={overlayContainerRef}
-          className="paper"
-          style={{ display: viewMode === 'overlay' ? 'block' : 'none', position: 'relative' }}
-        >
-          <canvas ref={overlayCanvasRef} className="pdf-canvas" />
-          {analysis && viewMode === 'overlay' && (
-            <>
-              <DebugLayer
-                analysis={analysis}
-                showItems={showItems}
-                showBlocks={showBlocks}
-                showColumns={showColumns}
-              />
-              <div style={{ fontSize: overlayFontSize }}>
-                <ParallelLayer segments={segments} gap={OVERLAY_GAP} visible collapsed={collapsed} />
-              </div>
-            </>
-          )}
-        </div>
       </main>
       </div>
     </div>

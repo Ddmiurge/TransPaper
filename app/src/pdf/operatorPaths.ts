@@ -166,12 +166,3 @@ export function geometryBoxesFromOperators(
 
   return { paths, images };
 }
-
-/** 兼容旧调用方：只要矢量路径 */
-export function pathBoxesFromOperators(
-  ops: OperatorListLike,
-  viewportTransform: number[],
-  ids: OperatorIds
-): BBox[] {
-  return geometryBoxesFromOperators(ops, viewportTransform, ids).paths;
-}

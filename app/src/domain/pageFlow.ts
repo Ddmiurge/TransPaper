@@ -1,4 +1,5 @@
 import { coveredColumnIndexes } from './columns';
+import { coverageRatio, intersectionArea, intersectionRect, intersects, unionBBox } from './bbox';
 import type { BBox, Block, PageAnalysis, TextSpan } from '../types';
 
 /**
@@ -260,11 +261,7 @@ export function buildPageFlow(
     if (area <= 0) return 0;
     let covered = 0;
     for (const region of options.figureRegions ?? []) {
-      const w =
-        Math.min(bbox.x + bbox.width, region.x + region.width) - Math.max(bbox.x, region.x);
-      const h =
-        Math.min(bbox.y + bbox.height, region.y + region.height) - Math.max(bbox.y, region.y);
-      if (w > 0 && h > 0) covered += w * h;
+      covered += intersectionArea(bbox, region);
     }
     return covered / area;
   };
@@ -359,13 +356,12 @@ export function buildPageFlow(
         const regionArea = bbox.width * bbox.height;
         if (regionArea <= 0) return false;
         return (
-          blocks.some((b) => {
-            if (!b.isBodyText) return false;
-            const w = Math.min(bbox.x + bbox.width, b.bbox.x + b.bbox.width) - Math.max(bbox.x, b.bbox.x);
-            const h = Math.min(bbox.y + bbox.height, b.bbox.y + b.bbox.height) - Math.max(bbox.y, b.bbox.y);
-            // 覆盖率按**区域自身**算：图被正文块碰到一角就该走障碍路径
-            return w > 0 && h > 0 && (w * h) / regionArea > 0.3;
-          })
+          blocks.some(
+            (b) =>
+              b.isBodyText &&
+              // 覆盖率按**区域自身**算：图被正文块碰到一角就该走障碍路径
+              intersectionArea(b.bbox, bbox) / regionArea > 0.3
+          )
         );
       })
       .map((bbox) => {
@@ -405,12 +401,7 @@ export function buildPageFlow(
       .filter(
         (m) =>
           m.covered.length >= 2 ||
-          blocks.some((b) => {
-            if (!b.isBodyText) return false;
-            const w = Math.min(m.bbox.x + m.bbox.width, b.bbox.x + b.bbox.width) - Math.max(m.bbox.x, b.bbox.x);
-            const h = Math.min(m.bbox.y + m.bbox.height, b.bbox.y + b.bbox.height) - Math.max(m.bbox.y, b.bbox.y);
-            return w > 0 && h > 0 && (w * h) / (m.bbox.width * m.bbox.height) > 0.3;
-          })
+          blocks.some((b) => b.isBodyText && coverageRatio(b.bbox, m.bbox) > 0.3)
       ),
   ];
 
@@ -436,23 +427,8 @@ export function buildPageFlow(
           const b = obstacles[j];
           if (!b.block) continue; // 只合并块衍生的障碍
           if (!(b.block.formula || !b.isBodyText)) continue; // 普通正文不吞
-          const w =
-            Math.min(a.bbox.x + a.bbox.width, b.bbox.x + b.bbox.width) -
-            Math.max(a.bbox.x, b.bbox.x);
-          const h =
-            Math.min(a.bbox.y + a.bbox.height, b.bbox.y + b.bbox.height) -
-            Math.max(a.bbox.y, b.bbox.y);
-          if (w <= 0 || h <= 0) continue;
-          a.bbox = {
-            x: Math.min(a.bbox.x, b.bbox.x),
-            y: Math.min(a.bbox.y, b.bbox.y),
-            width:
-              Math.max(a.bbox.x + a.bbox.width, b.bbox.x + b.bbox.width) -
-              Math.min(a.bbox.x, b.bbox.x),
-            height:
-              Math.max(a.bbox.y + a.bbox.height, b.bbox.y + b.bbox.height) -
-              Math.min(a.bbox.y, b.bbox.y),
-          };
+          if (!intersects(a.bbox, b.bbox)) continue;
+          a.bbox = unionBBox([a.bbox, b.bbox]);
           a.isBodyText = false;
           obstacles.splice(j, 1);
           merged = true;
@@ -728,30 +704,17 @@ export function buildPageFlow(
   for (const block of textBlocks) {
     let overlapArea = 0;
     for (const slice of slices) {
-      const w =
-        Math.min(block.bbox.x + block.bbox.width, slice.source.x + slice.source.width) -
-        Math.max(block.bbox.x, slice.source.x);
-      const h =
-        Math.min(block.bbox.y + block.bbox.height, slice.source.y + slice.source.height) -
-        Math.max(block.bbox.y, slice.source.y);
-      if (w <= 0 || h <= 0) continue;
+      const overlap = intersectionRect(block.bbox, slice.source);
+      if (!overlap) continue;
       // 绕排图的例外：正文块的**包围盒**会盖住图所在的那半边（正文在另一半边
       // 绕排，bbox 是所有行并出来的），与图的切片在 bbox 层面重叠，
       // 但实际文字像素并不在切片里。重叠部分若落在图形区域内，
       // 说明是区域「解释得了」的像素，按面积扣除而不是整块豁免。
-      const overlap = {
-        x: Math.max(block.bbox.x, slice.source.x),
-        y: Math.max(block.bbox.y, slice.source.y),
-        width: w,
-        height: h,
-      };
       let regionCovered = 0;
       for (const r of options.figureRegions ?? []) {
-        const rw = Math.min(overlap.x + overlap.width, r.x + r.width) - Math.max(overlap.x, r.x);
-        const rh = Math.min(overlap.y + overlap.height, r.y + r.height) - Math.max(overlap.y, r.y);
-        if (rw > 0 && rh > 0) regionCovered += rw * rh;
+        regionCovered += intersectionArea(overlap, r);
       }
-      overlapArea += Math.max(0, w * h - regionCovered);
+      overlapArea += Math.max(0, overlap.width * overlap.height - regionCovered);
     }
     const blockArea = block.bbox.width * block.bbox.height;
     if (blockArea > 0 && overlapArea / blockArea > 0.05) {
@@ -772,12 +735,7 @@ export function buildPageFlow(
       .filter(({ n }) => {
         if (n.kind !== 'slice') return false;
         const b = n.source;
-        return (
-          b.x < region.x + region.width &&
-          region.x < b.x + b.width &&
-          b.y < region.y + region.height &&
-          region.y < b.y + b.height
-        );
+        return intersects(b, region);
       });
     if (hitSlices.length < 2) continue;
     const first = hitSlices[0].index;
