@@ -15,7 +15,8 @@ import { selfCheck, type SelfCheckReport } from './domain/selfCheck';
 import { TranslationBar } from './components/TranslationBar';
 import { translationStore } from './state/translationStore';
 import { overrideStore } from './state/overrideStore';
-import { extractPageItems, loadPdf } from './pdf/pdfjsAdapter';
+import { describeError, isDesktop, logLine } from './infra/desktopLog';
+import { extractPageItems, loadPdf, probePdfEnvironment } from './pdf/pdfjsAdapter';
 import type { PageAnalysis } from './types';
 
 const BASE_SCALE = 1.5;
@@ -397,6 +398,10 @@ export default function App() {
 
     (async () => {
       try {
+        // 桌面环境没有 DevTools，把环境探测结果先落盘，出问题才有得查
+        if (isDesktop()) logLine(`env: ${await probePdfEnvironment()}`);
+        logLine(`loadDoc start: kind=${source.kind}`);
+
         // ArrayBuffer 要复制一份再交给 pdf.js —— 它会 transfer 掉传入的缓冲区，
         // 同一个 buffer 再用一次就会拿到空数据
         const payload =
@@ -408,6 +413,7 @@ export default function App() {
                 ? ((await libraryStore.getFileData(source.id)) ?? '')
                 : source.data.slice(0);
         const doc = await loadPdf(payload);
+        logLine(`loadDoc ok: pages=${doc.numPages}`);
         if (cancelled) return;
         pdfRef.current = doc;
         setDoc(doc);
@@ -446,6 +452,7 @@ export default function App() {
         }
       } catch (e) {
         if (cancelled) return;
+        logLine(`loadDoc FAIL: ${describeError(e)}`);
         setError(e instanceof Error ? e.message : String(e));
         setStatus('error');
       }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { PageFlowView, type FlowMeasurement, type BlockContextMenuInfo } from './PageFlowView';
+import { describeError, logLine } from '../infra/desktopLog';
 import { buildPageFlow } from '../domain/pageFlow';
 import { figurePathBoxes, isEnclosedByGraphics } from '../domain/figureRegions';
 import { analyzePage } from '../domain/pipeline';
@@ -118,21 +119,37 @@ export function PageFlowBlock({
     let cancelled = false;
 
     (async () => {
+      // 桌面环境没有 DevTools：记录每步耗时，定位「卡在哪一步」。
+      // 浏览器里不落盘（控制台什么都看得到），所以 mark 只在桌面环境生效
+      const t0 = performance.now();
+      const timing: string[] = [];
+      let step = 'start';
+      const mark = (name: string) => {
+        timing.push(`${name}=${Math.round(performance.now() - t0)}ms`);
+      };
       try {
         const page = await doc.getPage(pageNumber);
         if (cancelled) return;
+        step = 'getPage';
+        mark('getPage');
 
         const offscreen = await renderPageToOffscreen(page, scale);
         if (cancelled) return;
+        step = 'render';
+        mark('render');
 
         const extracted = await extractPageItems(page, pageNumber - 1, scale);
         if (cancelled) return;
+        step = 'items';
+        mark('items');
 
         const rawPaths = await extractPathBoxes(page, scale);
         // 位图（嵌入图片）的放置框 —— ACL 等排版的图表是整张 PNG/JPEG，
         // 矢量路径为 0，不看位图等于对这类论文关闭图表检测
         const rawImages = await extractImageBoxes(page, scale);
         if (cancelled) return;
+        step = 'paths';
+        mark('paths');
 
         // 坐标可信度自检：把路径框外扩几像素再探墨。
         // 路径框常常只有 1px 宽（细线），而采样是每 4 像素取一点 ——
@@ -200,7 +217,10 @@ export function PageFlowBlock({
           // 用域层算好的图形区域（已扩展到包住图内文字）。跨栏判定交给域层。
           figureRegions: analysis.figureRegions,
         });
+        mark('analyze');
+        logLine(`page ${pageNumber} ok: ${timing.join(' ')} blocks=${analysis.blocks.length}`);
       } catch (e) {
+        logLine(`page ${pageNumber} FAIL at ${step}: ${describeError(e)} | ${timing.join(' ')}`);
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       }
     })();

@@ -1,3 +1,6 @@
+// 必须在 pdf.js 之前：WKWebView 缺少它依赖的较新 Map 方法（见该文件注释）
+import '../infra/webkitPolyfills';
+
 import * as pdfjsLib from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
@@ -7,6 +10,39 @@ import type { BBox, RawTextItem, TextItem } from '../types';
 import { collectFontTraits } from './fontTraits';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+
+/**
+ * 环境探测：把「pdf.js 能不能正常干活」的前置条件逐个试一遍。
+ *
+ * ── 为什么需要 ──
+ * 打包后的桌面应用跑在 `tauri://` 自定义协议下，而 WebKit 对自定义协议
+ * 的 Worker / 范围请求支持与 http 并不一致 —— 一旦 worker 起不来，
+ * pdf.js 会静默退化成主线程解析：表现就是「第一页失败、后面几页极慢」。
+ * 界面上只显示一句「解析失败」，根本看不出是哪一环，所以主动探测并落日志。
+ */
+export async function probePdfEnvironment(): Promise<string> {
+  const parts: string[] = [`origin=${window.location.origin}`, `href=${window.location.href}`];
+
+  try {
+    const res = await fetch(workerUrl, { method: 'GET' });
+    parts.push(`fetchWorker=${res.status}/${(await res.arrayBuffer()).byteLength}B`);
+  } catch (e) {
+    parts.push(`fetchWorker=FAIL(${e instanceof Error ? e.message : String(e)})`);
+  }
+
+  try {
+    const w = new Worker(workerUrl);
+    w.terminate();
+    parts.push('newWorker=ok');
+  } catch (e) {
+    parts.push(`newWorker=FAIL(${e instanceof Error ? e.message : String(e)})`);
+  }
+
+  return parts.join(' | ');
+}
+
+/** worker 地址，供探测与诊断使用 */
+export { workerUrl as PDF_WORKER_URL };
 
 export interface PageRenderResult {
   items: TextItem[];
