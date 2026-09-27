@@ -1,6 +1,7 @@
 import { coveredColumnIndexes } from './columns';
 import { coverageRatio, intersectionArea, intersectionRect, intersects, unionBBox } from './bbox';
 import { anchorOf } from './overrides';
+import type { MathPiece } from './inlineMath';
 import type { BBox, Block, PageAnalysis, TextSpan } from '../types';
 
 /**
@@ -77,6 +78,21 @@ export interface FlowText {
   anchor: string;
   /** 当前是否被手动改判及其类型；null = 自动判定。渲染层据此标注 */
   overridden: string | null;
+  /**
+   * 跨页段落接续（I25）：本块是上一页末尾段落的延续。
+   *
+   * 渲染层据此**去掉首行缩进** —— 它不是新段落，是同一段被页边界腰斩的后半部分。
+   * 译文（登记在本块 id 下）是合并后的整段译文。
+   */
+  continuesFrom?: boolean;
+  /**
+   * 跨页段落接续：本块译文对应的**合并后**行内公式片段。
+   *
+   * 译文单元是「上一页尾块 + 本块」的合并文本，其中的占位符编号
+   * 跨两块唯一（见 crossPage.mergeMasked），不能用本块自己的 spans
+   * 重新计算 —— 那样尾块的 `[[MATH_n]]` 会原样漏在译文里。
+   */
+  mathPieces?: MathPiece[];
 }
 
 export type FlowNode = FlowSlice | FlowText;
@@ -228,6 +244,18 @@ export interface PageFlowOptions {
    * analyzePage 之后应用（见 domain/overrides.ts 的 applyOverrides）。
    */
   overrides?: ReadonlyMap<string, import('./overrides').OverrideKind>;
+
+  /**
+   * 跨页段落接续（I25）：作为「合并译文单元」宿主的块 id 集合。
+   * 命中的文本节点打 `continuesFrom`（渲染层去首行缩进）。
+   */
+  continuationHeadIds?: ReadonlySet<string>;
+
+  /**
+   * 跨页段落接续：块 id → 合并后的行内公式片段（含上一页尾块的公式）。
+   * 译文回填必须用它，而不是块自己的 spans 重新算。
+   */
+  mergedMathPieces?: ReadonlyMap<string, MathPiece[]>;
 }
 
 export function buildPageFlow(
@@ -650,6 +678,8 @@ export function buildPageFlow(
             width: readingWidth,
             anchor,
             overridden: options.overrides?.get(anchor) ?? null,
+            continuesFrom: options.continuationHeadIds?.has(block.id) === true,
+            mathPieces: options.mergedMathPieces?.get(block.id),
           });
           textSeq += 1;
         }

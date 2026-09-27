@@ -6,6 +6,12 @@ import { buildPageFlow } from '../domain/pageFlow';
 import { figurePathBoxes, isEnclosedByGraphics } from '../domain/figureRegions';
 import { analyzePage } from '../domain/pipeline';
 import { applyOverrides, AutoJudgmentStash } from '../domain/overrides';
+import {
+  isContinuation,
+  mergeMasked,
+  paragraphTailInfoOf,
+  type ParagraphTailInfo,
+} from '../domain/crossPage';
 import { maskInlineMath } from '../domain/inlineMath';
 import { overrideStore } from '../state/overrideStore';
 import { mockTranslate } from '../mock/translations';
@@ -42,6 +48,12 @@ export interface PageReadyInfo {
    * 上游把它记下来，喂给下一页 —— 文献表常跨页，这个状态必须串联。
    */
   referencesActive: boolean;
+  /**
+   * 本页的「段落尾部」（I25 跨页接续）：最后一个可译正文块。
+   * 上一页就绪时上报，下一页拿它与自己的首块做接续判定 ——
+   * 与 referencesActive 同一条逐页串联模式。
+   */
+  paragraphTail: ParagraphTailInfo | null;
 }
 
 interface PageData extends PageReadyInfo {
@@ -65,6 +77,12 @@ interface Props {
    * 瀑布流是顺序加载的，所以外层拿到上一页的结果时，下一页尚未开始 —— 天然成立。
    */
   referencesActive: boolean;
+  /**
+   * 上一页的「段落尾部」（I25 跨页接续）。
+   * 与本页第一个可译正文块做接续判定；成立则两半合并为一个翻译单元。
+   * 页 N+1 只在页 N 就绪后才开始加载，这个 prop 到达时必然可用。
+   */
+  prevTail?: ParagraphTailInfo | null;
   /**
    * 文档级重排行宽基准（全文档已见页面的最大内容宽）。
    * 收尾页只有半栏内容时仍按常规行宽排（见 PageFlowOptions.readingWidth）。
@@ -96,6 +114,7 @@ export function PageFlowBlock({
   enabled,
   baseFontSize,
   referencesActive,
+  prevTail,
   docReadingWidth,
   onReady,
   onMeasured,
@@ -208,10 +227,14 @@ export function PageFlowBlock({
         // 是「自动判定 + 用户改判」两层叠加（ADR-004 的双层设计）
         applyOverrides(analysis.blocks, overrideStore.getSnapshot().byAnchor, stashRef.current);
 
+        // 段落尾部（I25）：改判之后取 —— 尾部候选必须反映最终判定
+        const paragraphTail = paragraphTailInfoOf(analysis.blocks);
+
         setData({
           analysis,
           geometryConfidence,
           referencesActive: analysis.referencesActive,
+          paragraphTail,
           offscreen,
           figurePaths: sliceGeometry,
           // 用域层算好的图形区域（已扩展到包住图内文字）。跨栏判定交给域层。
@@ -237,6 +260,7 @@ export function PageFlowBlock({
         analysis: data.analysis,
         geometryConfidence: data.geometryConfidence,
         referencesActive: data.analysis.referencesActive,
+        paragraphTail: data.paragraphTail,
       });
     }
   }, [data, pageNumber, onReady]);
@@ -250,6 +274,34 @@ export function PageFlowBlock({
       setData({ ...data });
     });
   }, [data]);
+
+  /**
+   * 跨页段落接续判定（I25）。
+   *
+   * 上一页尾块 + 本页第一个可译正文块，判据见 domain/crossPage.ts。
+   * 判定成立时本页首块成为「合并译文单元」的宿主：登记的是合并后的
+   * 占位文本，上一页尾块被注销（不再单独送译）。
+   */
+  const continuation = useMemo(() => {
+    if (!data) return null;
+    const head =
+      data.analysis.blocks.find((b) => b.isBodyText && b.translatable) ?? null;
+    if (!isContinuation(prevTail ?? null, head) || !prevTail || !head) return null;
+    const headMasked = maskInlineMath(head.text, head.spans);
+    const merged = mergeMasked(
+      prevTail.masked,
+      prevTail.pieces,
+      headMasked.masked,
+      headMasked.pieces
+    );
+    return {
+      tailBlockId: prevTail.blockId,
+      tailText: prevTail.text,
+      headBlockId: head.id,
+      masked: merged.masked,
+      pieces: merged.pieces,
+    };
+  }, [data, prevTail]);
 
   /**
    * 可译段落的 blockId。
@@ -271,30 +323,60 @@ export function PageFlowBlock({
   useEffect(() => {
     if (!data) return;
     // 行内公式先占位：公式字符根本不进译文生成过程（I19 结构层保护），
-    // 译完由渲染层按同一批 spans 回填原公式
+    // 译完由渲染层按同一批 spans 回填原公式。
+    // 接续宿主块除外：它登记的是「上一页尾块 + 本块」的合并文本（见下），
+    // 先按普通块登记、后面再替换会多一轮无意义的注销。
+    const headId = continuation?.headBlockId;
     translationStore.register(
       data.analysis.blocks
-        .filter((b) => b.isBodyText && b.translatable)
+        .filter((b) => b.isBodyText && b.translatable && b.id !== headId)
         .map((b) => ({ id: b.id, text: maskInlineMath(b.text, b.spans).masked }))
     );
-  }, [data]);
+    if (!continuation) return;
+    // 幂等守卫：合并单元已按这份文本登记过就不再动 ——
+    // 否则改判订阅触发重渲染时，unregister 会把已完成的合并译文也清掉
+    if (translationStore.isRegisteredWith(continuation.headBlockId, continuation.masked)) {
+      return;
+    }
+    translationStore.unregister([continuation.tailBlockId, continuation.headBlockId]);
+    translationStore.register([{ id: continuation.headBlockId, text: continuation.masked }]);
+  }, [data, continuation]);
 
   const realTranslations = useTranslationsFor(translatable);
   const { previewMode } = useTranslationSettings();
 
   const translations = useMemo(() => {
     if (!data) return EMPTY_TRANSLATIONS;
+    const tailId = continuation?.tailBlockId;
+    const headId = continuation?.headBlockId;
     // 未开启预览模式时直接用真实译文（没有就是空，页面只显示原文）
-    if (!previewMode) return realTranslations;
+    if (!previewMode) {
+      if (!tailId) return realTranslations;
+      // 尾块不再是独立翻译单元 —— 它的译文（若有）由合并单元承担，
+      // 过滤掉旧的半段译文，否则会与整段译文叠着显示
+      const filtered = new Map(realTranslations);
+      filtered.delete(tailId);
+      return filtered;
+    }
     // 预览模式：真实译文优先，缺的用占位译文补上 ——
     // 这样在没配 API Key 时也能评估排版，且一旦接入真实模型会自动覆盖
     const map = new Map<string, string>();
     for (const block of data.analysis.blocks) {
       if (!block.isBodyText) continue;
+      // 尾块无独立译文；接续宿主的占位译文也按合并后的整段算，长度才贴近真实
+      if (block.id === tailId) continue;
+      if (block.id === headId && continuation) {
+        map.set(
+          block.id,
+          realTranslations.get(block.id) ??
+            mockTranslate(`${continuation.tailText} ${block.text}`)
+        );
+        continue;
+      }
       map.set(block.id, realTranslations.get(block.id) ?? mockTranslate(block.text));
     }
     return map;
-  }, [data, realTranslations, previewMode]);
+  }, [data, realTranslations, previewMode, continuation]);
 
   const hasContent = useCallback(
     (bbox: BBox) => (data ? canvasHasInk(data.offscreen, bbox) : true),
@@ -311,8 +393,15 @@ export function PageFlowBlock({
       readingWidth: docReadingWidth > 0 ? docReadingWidth : undefined,
       // 手动改判：文本节点据此打 overridden 标记（块本身的改判已在 analyze 后套用）
       overrides: overrideStore.getSnapshot().byAnchor,
+      // 跨页段落接续（I25）：宿主块去首行缩进，译文回填用合并后的公式片段
+      continuationHeadIds: continuation
+        ? new Set([continuation.headBlockId])
+        : undefined,
+      mergedMathPieces: continuation
+        ? new Map([[continuation.headBlockId, continuation.pieces]])
+        : undefined,
     });
-  }, [data, translations, hasContent, docReadingWidth]);
+  }, [data, translations, hasContent, docReadingWidth, continuation]);
 
   if (error) {
     return (

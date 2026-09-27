@@ -108,6 +108,42 @@ class TranslationStore {
     return this.sources.size;
   }
 
+  /** 该段落当前登记的原文是否就是这段文本（幂等重登记的守卫用） */
+  isRegisteredWith(id: string, text: string): boolean {
+    return this.sources.get(id) === text;
+  }
+
+  /**
+   * 注销段落（I25 跨页接续用）：从待译集合移除，**已产生的译文/告警一并清除**。
+   *
+   * 为什么必须清译文：尾块先于接续判定登记，若翻译恰好已跑到它，
+   * 旧的「半段译文」会留在快照里继续显示 —— 合并后的整段译文到达后，
+   * 页面上就成了「半段译文 + 整段译文」叠在一起。
+   *
+   * 幂等：注销不存在的 id 不产生副作用（快照不更新，不触发重渲染）。
+   */
+  unregister(ids: readonly string[]): void {
+    let removed = 0;
+    for (const id of ids) {
+      if (this.sources.delete(id)) removed += 1;
+    }
+    if (removed === 0) return;
+
+    const byBlockId = new Map(this.snapshot.byBlockId);
+    const warnings = new Map(this.snapshot.warnings);
+    let translationsChanged = false;
+    for (const id of ids) {
+      if (byBlockId.delete(id)) translationsChanged = true;
+      if (warnings.delete(id)) translationsChanged = true;
+    }
+    this.patch({
+      registered: this.sources.size,
+      // 失败明细里被注销的段落也移除 —— 它已不再是待译单元
+      errors: this.snapshot.errors.filter((e) => !ids.includes(e.id)),
+      ...(translationsChanged ? { byBlockId, warnings } : {}),
+    });
+  }
+
   /**
    * 开始翻译。只处理「还没有译文」的段落 ——
    * 所以重复点击是安全的，且第二次点几乎零成本（全部命中缓存）。

@@ -11,6 +11,7 @@ import { OverrideMenu } from './components/OverrideMenu';
 import { analyzePage } from './domain/pipeline';
 import { findTitleBlock } from './domain/frontMatter';
 import type { OverrideKind } from './domain/overrides';
+import type { ParagraphTailInfo } from './domain/crossPage';
 import { selfCheck, type SelfCheckReport } from './domain/selfCheck';
 import { TranslationBar } from './components/TranslationBar';
 import { translationStore } from './state/translationStore';
@@ -153,6 +154,13 @@ export default function App() {
    */
   const [referenceStates, setReferenceStates] = useState<Map<number, boolean>>(new Map());
   /**
+   * 每页的「段落尾部」（I25 跨页接续）。
+   *
+   * 第 N 页的尾块要喂给第 N+1 页做接续判定 —— 与参考文献区间同一条
+   * 逐页串联模式。键是页码；换文档时随 referenceStates 一起清空。
+   */
+  const [tailStates, setTailStates] = useState<Map<number, ParagraphTailInfo | null>>(new Map());
+  /**
    * 文档级重排行宽基准：已就绪页面中最大的内容宽。
    *
    * 附录收尾页常常只有半栏内容，若按「本页内容宽」排行，
@@ -262,6 +270,12 @@ export default function App() {
       if (prev.get(page) === info.referencesActive) return prev;
       const next = new Map(prev);
       next.set(page, info.referencesActive);
+      return next;
+    });
+    setTailStates((prev) => {
+      if (prev.get(page) === info.paragraphTail) return prev;
+      const next = new Map(prev);
+      next.set(page, info.paragraphTail);
       return next;
     });
     setAnalysis(info.analysis);
@@ -397,6 +411,7 @@ export default function App() {
     setPageNumber(startPage);
     setReadyUpTo(Math.max(0, startPage - 1));
     setReferenceStates(new Map());
+    setTailStates(new Map());
     setDocReadingWidth(0);
     // 关键：块 id 不含内容，不清空会把上一份文档的译文显示到新文档上
     translationStore.reset();
@@ -661,6 +676,8 @@ export default function App() {
                 baseFontSize={flowFontSize}
                 // 入状态 = 上一页的出状态。文献区间由此跨页延续。
                 referencesActive={referenceStates.get(n - 1) ?? false}
+                // 上一页的段落尾部：与本页首块做接续判定（I25 跨页接续）
+                prevTail={tailStates.get(n - 1) ?? null}
                 docReadingWidth={docReadingWidth}
                 onReady={handlePageReady}
                 onMeasured={handleMeasured}

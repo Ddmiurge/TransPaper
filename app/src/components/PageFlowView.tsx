@@ -240,12 +240,18 @@ export function PageFlowView({ flow, sourceCanvas, baseFontSize, rootRef, onMeas
         // 译文字号要跟随原文。否则图注（0.9 倍）的译文会比原文还大，一眼就不对。
         // 标题例外：译文按正文字号排，不跟着标题放大。
         const targetSize = isHeading ? baseFontSize : size;
+        // 跨页段落接续（I25）：译文单元是合并后的整段，公式占位符编号跨两块唯一，
+        // 必须用合并片段回填 —— 用本块 spans 重算会让上一页的 [[MATH_n]] 漏在译文里
+        const targetPieces = node.mathPieces ?? maskInlineMath(node.source, node.spans).pieces;
 
         return (
           <article
             key={node.id}
             data-block-id={node.blockId}
-            className={`flow-block${isHeading ? ' flow-block--heading' : ''}`}
+            className={
+              `flow-block${isHeading ? ' flow-block--heading' : ''}` +
+              (node.continuesFrom ? ' flow-block--continued' : '')
+            }
           >
             <HeadingTag
               className={
@@ -269,7 +275,7 @@ export function PageFlowView({ flow, sourceCanvas, baseFontSize, rootRef, onMeas
                   译文里的 [[MATH_n]] 是行内公式占位符，回填成原公式后再显示 ——
                   公式的完整性由代码保证，不依赖模型复述
                 */}
-                {unmaskInlineMath(node.target, maskInlineMath(node.source, node.spans).pieces).text}
+                {unmaskInlineMath(node.target, targetPieces).text}
               </p>
             )}
           </article>

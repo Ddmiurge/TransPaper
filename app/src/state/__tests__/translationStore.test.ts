@@ -76,6 +76,46 @@ describe('段落登记', () => {
     ]);
     expect(store.sourceCount).toBe(1);
   });
+
+  it('isRegisteredWith 区分同一 id 下的不同原文（合并登记的幂等守卫用）', async () => {
+    const store = await freshStore();
+    store.register([{ id: 'b1', text: 'plain text' }]);
+    expect(store.isRegisteredWith('b1', 'plain text')).toBe(true);
+    // 同 id 换了文本（跨页合并后的整段）→ 不算已登记，允许替换
+    expect(store.isRegisteredWith('b1', 'tail text merged with head text')).toBe(false);
+    expect(store.isRegisteredWith('missing', 'anything')).toBe(false);
+  });
+
+  it('注销移除待译来源与已产生的译文，且幂等（I25 跨页接续）', async () => {
+    const store = await freshStore();
+    store.register([
+      { id: 'tail', text: 'an unfinished trailing fragment about depth' },
+      { id: 'head', text: 'and the continuation begins here about accuracy' },
+    ]);
+
+    // 幂等：注销不存在的 id 不产生副作用
+    store.unregister(['nonexistent']);
+    expect(store.getSnapshot().registered).toBe(2);
+
+    // 先把尾块真的译出来（合并判定可能晚于翻译启动）——
+    // 注销必须把旧译文一起清掉，否则半段译文会与整段译文叠着显示
+    await store.start();
+    expect(store.getSnapshot().status).toBe('done');
+    expect(store.getSnapshot().byBlockId.has('tail')).toBe(true);
+
+    store.unregister(['tail', 'head']);
+    expect(store.sourceCount).toBe(0);
+    expect(store.getSnapshot().registered).toBe(0);
+    expect(store.getSnapshot().byBlockId.has('tail')).toBe(false);
+    expect(store.getSnapshot().byBlockId.has('head')).toBe(false);
+    expect(store.isRegisteredWith('tail', 'an unfinished trailing fragment about depth')).toBe(false);
+
+    // 注销后可重新登记（合并单元走宿主块的 id）
+    const mergedText = 'an unfinished trailing fragment about depth and the continuation begins here about accuracy';
+    store.register([{ id: 'head', text: mergedText }]);
+    expect(store.isRegisteredWith('head', mergedText)).toBe(true);
+    expect(store.sourceCount).toBe(1);
+  });
 });
 
 describe('一键翻译的完整流程', () => {

@@ -230,6 +230,12 @@ body {
   margin: 2em 0 1.3em 0;
 }
 
+/* 跨页段落接续（I25）：这是同一段被页边界腰斩的后半部分，不是新段落 ——
+   首行缩进必须去掉，否则读起来像凭空多出一段。译文是合并后的整段，缩进保留。 */
+.flow-block--continued .flow-source {
+  text-indent: 0;
+}
+
 .flow-block:first-child,
 .flow-block--heading:first-child {
   margin-top: 0;

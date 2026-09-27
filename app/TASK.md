@@ -1,3 +1,33 @@
+# I25 任务清单 · 跨页段落接续
+
+> I25 · 状态：**已完成** · 小结见 [iterations/I25-summary.md](iterations/I25-summary.md)
+> 决策记录见 [ADR-017](../docs/adr/ADR-017-cross-page-paragraph-continuation.md)
+
+## 目标
+
+段落重建逐页进行，跨过页边界的段落被腰斩成两个翻译单元：前半段缺下文、后半段缺上文，
+各自送译导致跨界断裂；后半段还被误加首行缩进。从 I6 起挂在候选清单的 R3 欠账。
+
+## 进度
+
+- [x] `domain/crossPage.ts`：接续判定（尾部未完 + 头部延续，刻意保守）+ 占位符跨块重编号合并
+- [x] 逐页串联：页 N 上报段落尾部（PageReadyInfo.paragraphTail），页 N+1 判定接续
+- [x] 判定成立：两半合并为一个翻译单元（宿主块 id），尾块 `unregister`（连旧译文一起清）
+- [x] 宿主块 `flow-block--continued` → 首行缩进 0；合并译文整体显示在宿主下（不切分，ADR-017）
+- [x] 行内公式占位符跨块重编号，回填用合并片段（`mergedMathPieces`）
+- [x] 预览模式占位译文按合并整段计算
+- [x] 测试：单测 +18、真实 PDF +4（三基线各 ≥1 接续对）、store +2；**239 用例全绿**
+- [x] e2e `scripts/verify-continuation.mjs`：宿主存在 / 缩进 0 / 合并译文渲染，全过
+
+## 下一迭代候选
+
+1. 失败段落单点重试（I8 遗留，真实 Key 全文跑时必需）
+2. 导出双语对照 Markdown/HTML（M3 项）
+3. 标签过滤视图 / 拖拽归类（R2 打磨）
+4. macOS 签名/公证（需 Apple Developer 账号）+ 三平台打包
+
+---
+
 # I24 任务清单 · 轻量 CI + 桌面安装脚本
 
 > I24 · 状态：**已完成** · 小结见 [iterations/I24-summary.md](iterations/I24-summary.md)
