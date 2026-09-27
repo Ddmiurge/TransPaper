@@ -16,3 +16,6 @@ CODE_AUDIT.md
 
 # 编辑器配置
 .vscode/
+
+# 构建/诊断产物（截图与诊断输出，非源码，约 22 个文件 ~10MB）
+app/artifacts/
