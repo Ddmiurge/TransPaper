@@ -1,0 +1,62 @@
+# 跨平台 Release（I26）：推送 v* 标签时，在 macOS / Windows 两个 runner 上
+# 各自构建原生安装包，并合并到同一个 GitHub Release（draft）。
+#
+# 为什么用 matrix 双 runner 而不是本机交叉编译：
+# Tauri 无法在 macOS 上交叉编译出 Windows 二进制（keyring/rusqlite 等原生依赖
+# 必须在目标平台编译），所以"同时发两版本"必须由 CI 在各自平台 build。
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: --bundles dmg,app
+          - os: windows-latest
+            args: --bundles nsis,app
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22（npm 缓存）
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Rust stable（编译缓存）
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: 安装前端依赖
+        working-directory: app
+        run: npm ci
+
+      - name: 构建并上传到 Release（tauri-action 自动收集 bundle 产物）
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_name }}
+          releaseName: 'TransPaper ${{ github.ref_name }}'
+          releaseBody: '跨平台桌面安装包（macOS / Windows）。当前为未签名版本，首次打开可能被系统拦截，详见下方说明。'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

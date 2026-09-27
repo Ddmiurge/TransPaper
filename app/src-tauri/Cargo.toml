@@ -18,8 +18,9 @@ serde_json = "1"
 # 桌面翻译链路（I22）：LLM 请求由 Rust 发出 —— WebView 里的 fetch 过不了 CORS，
 # 而 dev server 的代理在打包后不存在。native-tls 走系统 Security.framework。
 reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
-# API Key 存系统钥匙串（兑现 ADR-011 §5 的安全欠账），不再落 localStorage
-keyring = { version = "3", features = ["apple-native"] }
+# API Key 存系统钥匙串（兑现 ADR-011 §5 的安全欠账），不再落 localStorage。
+# 平台条件化见文件末尾：apple-native 仅 macOS 可用（依赖 security-framework），
+# Windows/Linux 用各自原生后端，否则 Windows 编译会因拉入苹果框架失败。
 # 论文库存储底座（I23，兑现 ADR-007）：bundled 自带 SQLite 与 FTS5
 rusqlite = { version = "0.32", features = ["bundled"] }
 
@@ -34,3 +35,12 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# ── 跨平台钥匙串后端（I26：支持同时发 macOS / Windows 版）──
+# macOS 用系统 Security.framework（apple-native）；
+# 其他平台用各自原生后端（Windows Credential Manager / Linux secret-service）。
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+keyring = { version = "3" }
