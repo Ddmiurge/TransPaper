@@ -1,3 +1,31 @@
+# I23 任务清单 · SQLite 存储底座（桌面化第三步）
+
+> I23 · 状态：**已完成** · 小结见 [iterations/I23-summary.md](iterations/I23-summary.md)
+> 兑现 [ADR-007](../docs/adr/)（SQLite 主存储）与 ADR-016 第二步承诺
+
+## 目标
+
+论文库从 IndexedDB 迁到 SQLite + 文件系统（`app_data_dir`），为 FTS5 全文检索铺路；
+旧数据自动迁移、不丢不重。
+
+## 进度
+
+- [x] Rust `storage.rs`：papers/collections 表（JSON 列存集合/标签/改判）、
+      单写 Mutex、按 last_opened_at 索引；PDF 文件存 `app_data_dir/paper-files/`（临时文件+rename）
+- [x] 8 个 `db_*` command（papers/collections CRUD + file get/put + info）
+- [x] 前端 `TauriLibraryDb implements LibraryDb`（base64 过 IPC），libraryStore 按环境选择
+- [x] `migrateLegacyIdbToSqlite`：仅 SQLite 为空时迁移，不删旧库（回滚保险）
+- [x] Rust 单测 6 项；全量 215 用例绿
+- [x] **桌面包真实验证**：IndexedDB → SQLite 自动迁移 1 篇，二次启动幂等，全页解析 ok
+
+## 下一迭代（I24）候选
+
+1. FTS5 全文检索（需先建「解析文本入库」的数据管线）
+2. 三平台 CI 矩阵（GitHub Actions）
+3. 签名/公证 + 一键装到 /Applications
+
+---
+
 # I22 任务清单 · 桌面翻译链路（Rust HTTP + 系统钥匙串）
 
 > I22 · 状态：**已完成** · 小结见 [iterations/I22-summary.md](iterations/I22-summary.md)

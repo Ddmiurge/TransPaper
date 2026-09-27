@@ -11,7 +11,7 @@
 //! 错误分类（401/429/5xx → 重试行为）是领域逻辑，测试已锁在前端
 //! （`classifyHttpError`），Rust 只做透明管道，避免同一规则写两份。
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 /// 一次 LLM HTTP 调用的结果（透传给前端做领域层分类）
 #[derive(Debug, Serialize)]

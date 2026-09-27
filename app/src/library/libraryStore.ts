@@ -1,4 +1,6 @@
+import { isDesktop, logLine } from '../infra/desktopLog';
 import { IdbLibraryDb, type LibraryDb } from './db';
+import { migrateLegacyIdbToSqlite, TauriLibraryDb } from './sqliteDb';
 import { normalizeMeta, type Collection, type PaperMeta } from './types';
 import type { BlockOverride } from '../domain/overrides';
 
@@ -32,17 +34,18 @@ export class LibraryStore {
   private snapshot: LibrarySnapshot = { loaded: false, papers: [], collections: [] };
   private readonly listeners = new Set<Listener>();
   /**
-   * 惰性创建 —— **不能**在字段初始化时 new IdbLibraryDb()：
+   * 惰性创建 —— **不能**在字段初始化时创建 db：
    * 那会立刻打开 IndexedDB，而 Node 测试环境里没有 indexedDB 全局，
    * 就算测试随后注入内存实现，构造期的拒绝也已经逃逸成 unhandled rejection。
    * 只有真正 init()/读写时才创建。
+   * 桌面环境用 SQLite（I23），浏览器用 IndexedDB，接口相同。
    */
   private db: LibraryDb | null = null;
   /** 防止 init 被多次触发 */
   private initPromise: Promise<void> | null = null;
 
   private get database(): LibraryDb {
-    return (this.db ??= new IdbLibraryDb());
+    return (this.db ??= isDesktop() ? new TauriLibraryDb() : new IdbLibraryDb());
   }
 
   subscribe = (listener: Listener): (() => void) => {
@@ -65,6 +68,11 @@ export class LibraryStore {
   init(): Promise<void> {
     this.initPromise ??= (async () => {
       try {
+        // I23：桌面首次跑 SQLite 版时，把 IndexedDB 里的旧数据搬过来
+        if (isDesktop() && this.database instanceof TauriLibraryDb) {
+          const migrated = await migrateLegacyIdbToSqlite(this.database);
+          if (migrated > 0) logLine(`library migrated: ${migrated} papers from IndexedDB to SQLite`);
+        }
         const [rawMetas, collections] = await Promise.all([
           this.database.listMeta(),
           this.database.listCollections(),

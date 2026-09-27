@@ -20,6 +20,8 @@ serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
 # API Key 存系统钥匙串（兑现 ADR-011 §5 的安全欠账），不再落 localStorage
 keyring = { version = "3", features = ["apple-native"] }
+# 论文库存储底座（I23，兑现 ADR-007）：bundled 自带 SQLite 与 FTS5
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [features]
 # Tauri 2 默认生成，保留以便后续启用 protocol 自定义

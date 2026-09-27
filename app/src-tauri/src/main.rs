@@ -1,11 +1,27 @@
 // 薄壳阶段：窗口承载前端，平台能力以 command 形式逐步加入（ADR-016）。
-// I22 起包含：LLM HTTP 通道（WebView fetch 过不了 CORS 且打包后无 dev 代理）
-// 与系统钥匙串（API Key 不再落 localStorage，兑现 ADR-011 §5）。
+// I22：LLM HTTP 通道与系统钥匙串。I23：SQLite 论文库存储底座（ADR-007）。
 
 mod llm;
+mod storage;
 
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
+use tauri::Manager;
+
+use storage::{Collection, PaperMeta, Store};
+
+/// 论文库存储。惰性建库（首个命令到达时），单写 Mutex（ADR-007）。
+struct LibraryStore {
+    store: Store,
+}
+
+impl LibraryStore {
+    fn data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+        app.path()
+            .app_data_dir()
+            .map_err(|e| format!("无法确定数据目录：{e}"))
+    }
+}
 
 /// 诊断日志落盘。
 ///
@@ -82,14 +98,180 @@ fn secret_delete(key: String) -> Result<(), String> {
 
 const KEYCHAIN_SERVICE: &str = "com.ddmiurge.transpaper";
 
+// ── I23 论文库 SQLite 底座 ──
+// 全部命令 async：跑在 tauri 的线程池里，SQLite 操作不会卡 UI 主线程；
+// Mutex 锁内无 await，不跨异步持锁。
+
+#[tauri::command]
+async fn db_list_papers(app: tauri::AppHandle, lib: tauri::State<'_, LibraryStore>) -> Result<Vec<PaperMeta>, String> {
+    let dir = LibraryStore::data_dir(&app)?;
+    lib.store.with(&dir, |inner| storage::list_papers(&inner.conn))
+}
+
+#[tauri::command]
+async fn db_put_paper(
+    app: tauri::AppHandle,
+    lib: tauri::State<'_, LibraryStore>,
+    meta: PaperMeta,
+) -> Result<(), String> {
+    let dir = LibraryStore::data_dir(&app)?;
+    lib.store.with(&dir, |inner| storage::put_paper(&inner.conn, &meta))
+}
+
+#[tauri::command]
+async fn db_delete_paper(
+    app: tauri::AppHandle,
+    lib: tauri::State<'_, LibraryStore>,
+    id: String,
+) -> Result<(), String> {
+    let dir = LibraryStore::data_dir(&app)?;
+    lib.store.with(&dir, |inner| storage::delete_paper(inner, &id))
+}
+
+#[tauri::command]
+async fn db_list_collections(
+    app: tauri::AppHandle,
+    lib: tauri::State<'_, LibraryStore>,
+) -> Result<Vec<Collection>, String> {
+    let dir = LibraryStore::data_dir(&app)?;
+    lib.store.with(&dir, |inner| storage::list_collections(&inner.conn))
+}
+
+#[tauri::command]
+async fn db_put_collection(
+    app: tauri::AppHandle,
+    lib: tauri::State<'_, LibraryStore>,
+    collection: Collection,
+) -> Result<(), String> {
+    let dir = LibraryStore::data_dir(&app)?;
+    lib.store.with(&dir, |inner| storage::put_collection(&inner.conn, &collection))
+}
+
+#[tauri::command]
+async fn db_delete_collection(
+    app: tauri::AppHandle,
+    lib: tauri::State<'_, LibraryStore>,
+    id: String,
+) -> Result<(), String> {
+    let dir = LibraryStore::data_dir(&app)?;
+    lib.store.with(&dir, |inner| storage::delete_collection(&inner.conn, &id))
+}
+
+/// PDF 二进制按 base64 过 IPC（v1 简单可靠）。
+/// 优化点：`tauri::ipc::Response` 可零拷贝回传原始字节，等 profile 显示这是瓶颈再换。
+#[tauri::command]
+async fn db_get_file(
+    app: tauri::AppHandle,
+    lib: tauri::State<'_, LibraryStore>,
+    id: String,
+) -> Result<Option<String>, String> {
+    let dir = LibraryStore::data_dir(&app)?;
+    lib.store.with(&dir, |inner| {
+        let path = inner.files_dir.join(format!("{id}.pdf"));
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(format!("读取论文文件失败：{e}")),
+        };
+        Ok(Some(encode_base64(&bytes)))
+    })
+}
+
+#[tauri::command]
+async fn db_put_file(
+    app: tauri::AppHandle,
+    lib: tauri::State<'_, LibraryStore>,
+    id: String,
+    data_base64: String,
+) -> Result<(), String> {
+    let dir = LibraryStore::data_dir(&app)?;
+    lib.store.with(&dir, |inner| {
+        let bytes = decode_base64(&data_base64)?;
+        let tmp = inner.files_dir.join(format!("{id}.pdf.tmp"));
+        let final_path = inner.files_dir.join(format!("{id}.pdf"));
+        std::fs::write(&tmp, bytes).map_err(|e| format!("写入论文文件失败：{e}"))?;
+        // 先写临时文件再改名：进程被杀在写入中途不会留下半个坏 PDF
+        std::fs::rename(&tmp, &final_path).map_err(|e| format!("落盘论文文件失败：{e}"))?;
+        Ok(())
+    })
+}
+
+/// 每次启动报告一次库路径，诊断日志能对上「到底在用哪个库文件」。
+#[tauri::command]
+async fn db_info(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = LibraryStore::data_dir(&app)?;
+    Ok(dir.join("library.db").to_string_lossy().to_string())
+}
+
+// base64 手写（RFC 4648 标准字母表，带 padding）——不为两个函数引入依赖
+const B64_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+fn encode_base64(data: &[u8]) -> String {
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | (b[2] as u32);
+        out.push(B64_TABLE[(n >> 18) as usize & 63] as char);
+        out.push(B64_TABLE[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 { B64_TABLE[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { B64_TABLE[n as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
+fn decode_base64(s: &str) -> Result<Vec<u8>, String> {
+    fn value(c: u8) -> Result<u32, String> {
+        match c {
+            b'A'..=b'Z' => Ok((c - b'A') as u32),
+            b'a'..=b'z' => Ok((c - b'a') as u32 + 26),
+            b'0'..=b'9' => Ok((c - b'0') as u32 + 52),
+            b'+' => Ok(62),
+            b'/' => Ok(63),
+            _ => Err("非法 base64 字符".to_string()),
+        }
+    }
+    let bytes: Vec<u8> = s.bytes().filter(|b| !b" \n\r\t".contains(b)).collect();
+    let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
+    for chunk in bytes.chunks(4) {
+        if chunk.len() < 2 {
+            return Err("base64 长度不足".to_string());
+        }
+        let mut n = value(chunk[0])? << 18 | value(chunk[1])? << 12;
+        if chunk.len() > 2 {
+            n |= value(chunk[2])? << 6;
+        }
+        if chunk.len() > 3 {
+            n |= value(chunk[3])?;
+        }
+        out.push((n >> 16) as u8);
+        if chunk.len() > 2 {
+            out.push((n >> 8) as u8);
+        }
+        if chunk.len() > 3 {
+            out.push(n as u8);
+        }
+    }
+    Ok(out)
+}
+
 fn run() {
     tauri::Builder::default()
+        .manage(LibraryStore { store: Store::new() })
         .invoke_handler(tauri::generate_handler![
             append_log,
             llm_chat,
             secret_get,
             secret_set,
-            secret_delete
+            secret_delete,
+            db_list_papers,
+            db_put_paper,
+            db_delete_paper,
+            db_list_collections,
+            db_put_collection,
+            db_delete_collection,
+            db_get_file,
+            db_put_file,
+            db_info
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");
