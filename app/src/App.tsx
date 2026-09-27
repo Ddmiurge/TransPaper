@@ -15,6 +15,7 @@ import { selfCheck, type SelfCheckReport } from './domain/selfCheck';
 import { TranslationBar } from './components/TranslationBar';
 import { translationStore } from './state/translationStore';
 import { overrideStore } from './state/overrideStore';
+import { hydrateApiKey } from './state/translationSettings';
 import { describeError, isDesktop, logLine } from './infra/desktopLog';
 import { extractPageItems, loadPdf, probePdfEnvironment } from './pdf/pdfjsAdapter';
 import type { PageAnalysis } from './types';
@@ -359,6 +360,10 @@ export default function App() {
   );
 
   // ── 论文库初始化 + 启动恢复 ──
+  // 桌面环境的 Key 在钥匙串里，设置面板需要它异步取回后才能显示
+  useEffect(() => {
+    void hydrateApiKey();
+  }, []);
   useEffect(() => {
     let cancelled = false;
     void libraryStore.init().then(() => {

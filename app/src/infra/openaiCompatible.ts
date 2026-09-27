@@ -4,6 +4,7 @@ import {
   TRANSLATION_SYSTEM_PROMPT,
   type TranslatorPort,
 } from '../domain/translation';
+import { defaultTransport, isTimeoutError, type LlmHttpResult, type LlmTransport } from './llmTransport';
 
 /**
  * OpenAI 兼容的翻译适配器。
@@ -13,13 +14,13 @@ import {
  *
  * ── 关于 baseUrl 与 CORS ──
  * 浏览器直连 LLM API 会被 CORS 拦住（这些服务不给浏览器发 CORS 头）。
- * 所以开发期的 `baseUrl` 走 Vite 的代理（`/api/llm` → 真实域名），
- * 由 dev server 转发。迁到 Tauri 之后请求由 Rust 侧发出，这个问题自动消失 ——
- * 这也是 `baseUrl` 做成参数而不是写死的原因。
+ * 所以浏览器环境的 `baseUrl` 走 Vite 的代理（`/api/llm` → 真实域名），
+ * 由 dev server 转发；桌面环境则由 Rust 直接发请求（tauriTransport），
+ * 没有代理概念，baseUrl 必须是完整的 https:// 地址 —— 通道选择见 llmTransport。
  */
 
 export interface OpenAICompatibleOptions {
-  /** 例如 `/api/llm`（经 Vite 代理）或 `https://api.deepseek.com/v1` */
+  /** 例如 `/api/llm`（浏览器经 Vite 代理）或 `https://api.deepseek.com` */
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -27,6 +28,8 @@ export interface OpenAICompatibleOptions {
   timeoutMs?: number;
   maxTokens?: number;
   temperature?: number;
+  /** 发送通道。缺省按运行环境自动选择（桌面 → Rust，浏览器 → Vite 代理） */
+  transport?: LlmTransport;
 }
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -59,6 +62,7 @@ export class OpenAICompatibleTranslator implements TranslatorPort {
       timeoutMs: DEFAULT_TIMEOUT_MS,
       maxTokens: DEFAULT_MAX_TOKENS,
       temperature: DEFAULT_TEMPERATURE,
+      transport: defaultTransport(),
       ...options,
     };
   }
@@ -69,39 +73,26 @@ export class OpenAICompatibleTranslator implements TranslatorPort {
     }
 
     const url = `${this.opts.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const bodyJson = JSON.stringify({
+      model: this.opts.model,
+      messages: [
+        { role: 'system', content: TRANSLATION_SYSTEM_PROMPT },
+        { role: 'user', content: buildTranslationPrompt(source) },
+      ],
+      temperature: this.opts.temperature,
+      max_tokens: this.opts.maxTokens,
+      stream: false,
+    });
 
-    // 超时用「外部 signal + 自己的计时器」组合，而不是 AbortSignal.timeout：
-    // 后者无法同时响应用户的取消，用户点了取消还要等满超时。
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new Error('timeout')), this.opts.timeoutMs);
-    const onUserAbort = () => controller.abort(new Error('aborted'));
-    signal.addEventListener('abort', onUserAbort, { once: true });
-
-    let response: Response;
+    let result: LlmHttpResult;
     try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.opts.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.opts.model,
-          messages: [
-            { role: 'system', content: TRANSLATION_SYSTEM_PROMPT },
-            { role: 'user', content: buildTranslationPrompt(source) },
-          ],
-          temperature: this.opts.temperature,
-          max_tokens: this.opts.maxTokens,
-          stream: false,
-        }),
-        signal: controller.signal,
-      });
+      // 超时与取消的职责在通道内（fetch 用计时器，桌面由 Rust 的 reqwest 超时）
+      result = await this.opts.transport(url, this.opts.apiKey, bodyJson, this.opts.timeoutMs, signal);
     } catch (err) {
       // AbortError 有两种来源，必须区分：用户取消 vs 超时。
       // 混为一谈的话，超时会被当成「用户取消」而静默丢弃。
       if (signal.aborted) throw new TranslationError('aborted', '已取消');
-      if (controller.signal.aborted) {
+      if (isTimeoutError(err)) {
         throw new TranslationError('network', `请求超时（${this.opts.timeoutMs / 1000}s）`);
       }
       throw new TranslationError(
@@ -109,18 +100,15 @@ export class OpenAICompatibleTranslator implements TranslatorPort {
         `网络请求失败：${err instanceof Error ? err.message : String(err)}`,
         { cause: err }
       );
-    } finally {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', onUserAbort);
     }
 
-    if (!response.ok) {
-      throw await classifyHttpError(response);
+    if (result.status < 200 || result.status >= 300) {
+      throw classifyHttpError(result);
     }
 
     let payload: ChatCompletionResponse;
     try {
-      payload = (await response.json()) as ChatCompletionResponse;
+      payload = JSON.parse(result.body) as ChatCompletionResponse;
     } catch (err) {
       throw new TranslationError('server', '响应不是合法 JSON', { cause: err });
     }
@@ -149,14 +137,14 @@ export class OpenAICompatibleTranslator implements TranslatorPort {
  * **这个分类直接决定重试行为**：401 重试一百次也不会成功，
  * 只会让用户以为「在跑」而实际上一直在失败。
  */
-async function classifyHttpError(response: Response): Promise<TranslationError> {
-  const status = response.status;
+function classifyHttpError(result: LlmHttpResult): TranslationError {
+  const status = result.status;
   let detail = '';
   try {
-    const body = (await response.json()) as ChatCompletionResponse;
+    const body = JSON.parse(result.body) as ChatCompletionResponse;
     detail = body.error?.message ?? '';
   } catch {
-    detail = await response.text().catch(() => '');
+    detail = result.body.slice(0, 200);
   }
   const suffix = detail ? `：${detail.slice(0, 200)}` : '';
 
@@ -164,10 +152,8 @@ async function classifyHttpError(response: Response): Promise<TranslationError> 
     return new TranslationError('auth', `API Key 无效或无权限（HTTP ${status}）${suffix}`);
   }
   if (status === 429) {
-    const header = response.headers.get('retry-after');
-    const seconds = header ? Number(header) : NaN;
     return new TranslationError('rate-limit', `触发限流（HTTP 429）${suffix}`, {
-      retryAfterMs: Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : undefined,
+      retryAfterMs: result.retryAfterMs,
     });
   }
   if (status >= 500) {

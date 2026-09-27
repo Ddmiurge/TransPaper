@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { isDesktop } from '../infra/desktopLog';
 import {
   PROVIDER_PRESETS,
   useTranslationSettings,
@@ -132,6 +133,8 @@ function SettingsPanel() {
             updateTranslationSettings({
               provider: e.target.value,
               model: next?.model ?? settings.model,
+              // 桌面直发请求，切预设时顺手把 baseUrl 换成该服务的完整地址
+              baseUrl: isDesktop() && next ? next.origin : settings.baseUrl,
             });
           }}
         >
@@ -156,6 +159,7 @@ function SettingsPanel() {
         <button type="button" onClick={() => setShowKey((v) => !v)}>
           {showKey ? '隐藏' : '显示'}
         </button>
+        {isDesktop() && <span className="hint">保存在系统钥匙串，不写入网页存储</span>}
       </div>
 
       <div className="settings-row">
@@ -177,8 +181,9 @@ function SettingsPanel() {
           onChange={(e) => updateTranslationSettings({ baseUrl: e.target.value.trim() })}
         />
         <span className="hint">
-          开发期走 Vite 代理（默认 <code>/api/llm</code>）以绕过 CORS；换服务需同步改
-          <code>vite.config.ts</code>
+          {isDesktop()
+            ? '桌面版由应用直接发出请求（无跨域限制），填完整的 https:// 接口地址'
+            : '开发期走 Vite 代理（默认 /api/llm）以绕过 CORS；换服务需同步改 vite.config.ts'}
         </span>
       </div>
 

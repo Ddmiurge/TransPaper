@@ -1,6 +1,39 @@
+# I22 任务清单 · 桌面翻译链路（Rust HTTP + 系统钥匙串）
+
+> I22 · 状态：**已完成** · 小结见 [iterations/I22-summary.md](iterations/I22-summary.md)
+> 决策记录见 [ADR-016](../docs/adr/ADR-016-desktop-shell-tauri-and-cross-platform.md)（桌面化第二步）
+
+## 目标
+
+I21 的 .app 能看论文，但翻译一点就失败——dev server 的 `/api/llm` 代理在打包后不存在。
+本迭代兑现 ADR-011 的两笔迁移欠账：**请求由 Rust 发出** + **Key 存系统钥匙串**。
+
+## 进度
+
+- [x] Rust `llm.rs`：reqwest 透传管道（status/body/retry-after），错误分类留在前端领域层
+- [x] Rust 超时坑：reqwest Display 吞掉超时细节，必须 `is_timeout()` 判断后规范化消息
+- [x] Rust 钥匙串：`secret_get/set/delete`（keyring，无条目/删除不存在条目均不算错）
+- [x] `infra/llmTransport.ts`：fetch/tauri 双通道 + 按环境自动选择；桌面拒绝相对路径 baseUrl；
+      取消只放弃等待（Rust 请求跑完丢弃，v1 有意为之）
+- [x] 修真 bug：invoke 原写在 abort 检查之前——已取消的请求仍然发出（单测锁死）
+- [x] `translationSettings.ts`：桌面 Key 只进钥匙串（800ms 防抖）、localStorage 不含 Key、
+      启动 `hydrateApiKey()` 异步恢复；浏览器行为完全不变
+- [x] 桌面默认 baseUrl = `https://api.deepseek.com`，旧存的 `/api/llm` 强制纠正；
+      切换服务预设自动填完整地址
+- [x] 测试：Rust 3 项（透传/Retry-After/超时）+ 前端 10 项（分流/组装/abort/钥匙串）；
+      全量 23 文件 / 215 用例全绿；web e2e 无回归
+
+## 下一迭代（I23）候选
+
+1. 桌面化第三步：`app_data_dir` + SQLite（docs/04 DDL + FTS5 全文检索）
+2. 三平台 CI 矩阵（GitHub Actions：macos/windows/ubuntu）
+3. 签名/公证 + 一键装到 /Applications 脚本
+
+---
+
 # I21 任务清单 · 桌面化第一步「薄壳」（Tauri 2 · macOS）
 
-> 当前迭代：**I21** · 状态：**已完成** · 小结见 [iterations/I21-summary.md](iterations/I21-summary.md)
+> I21 · 状态：**已完成** · 小结见 [iterations/I21-summary.md](iterations/I21-summary.md)
 > 决策记录见 [ADR-016](../docs/adr/ADR-016-desktop-shell-tauri-and-cross-platform.md)
 
 ## 目标

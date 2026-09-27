@@ -15,6 +15,11 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# 桌面翻译链路（I22）：LLM 请求由 Rust 发出 —— WebView 里的 fetch 过不了 CORS，
+# 而 dev server 的代理在打包后不存在。native-tls 走系统 Security.framework。
+reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
+# API Key 存系统钥匙串（兑现 ADR-011 §5 的安全欠账），不再落 localStorage
+keyring = { version = "3", features = ["apple-native"] }
 
 [features]
 # Tauri 2 默认生成，保留以便后续启用 protocol 自定义
