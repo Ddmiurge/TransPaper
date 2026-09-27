@@ -3,3 +3,16 @@ node_modules/
 dist/
 .workbuddy/
 *.log
+
+# 内部审计文档（不入库，保留本地副本）
+CODE_AUDIT.md
+
+# 环境变量 / 密钥（防止误提交）
+.env
+.env.*
+
+# Rust 构建产物兜底（src-tauri/.gitignore 已覆盖其自身目录）
+**/target/
+
+# 编辑器配置
+.vscode/
