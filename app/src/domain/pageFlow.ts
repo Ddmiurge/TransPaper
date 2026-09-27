@@ -146,10 +146,10 @@ export interface PageFlow {
   bodyFontSize: number;
 }
 
-type SegmentKind = 'image' | 'text' | 'skip';
+type BandKind = 'image' | 'text' | 'skip';
 
-interface Segment {
-  kind: SegmentKind;
+interface Band {
+  kind: BandKind;
   y0: number;
   y1: number;
   sourceX: number;
@@ -516,7 +516,7 @@ export function buildPageFlow(
       })
       .sort((a, b) => a.y0 - b.y0 || a.y1 - b.y1);
 
-    const segments: Segment[] = [];
+    const bands: Band[] = [];
     let cursor = top;
 
     /**
@@ -544,23 +544,23 @@ export function buildPageFlow(
         // 无条件切图的旧实现会把段落之间的留白变成一堆纯白图像节点 ——
         // 页面上因此出现莫名的空白，「间距交给 CSS」的设计意图完全落空。
         if (gapHasFigure(cursor, iv.y0)) {
-          segments.push({ kind: 'image', y0: cursor, y1: iv.y0, sourceX: left, width: columnWidth });
+          bands.push({ kind: 'image', y0: cursor, y1: iv.y0, sourceX: left, width: columnWidth });
         } else {
           // 必须压成一个 skip 片段，而不是「什么都不生成」——
           // 正文片段结束后会开启一个图像 run，这里若不留断点，
           // 这个 run 会一路延续到下一个正文片段，把留白又切了进去。
           // （这个坑是单测抓到的：只删掉 image 片段，切片数量并没有减少。）
-          segments.push({ kind: 'skip', y0: cursor, y1: iv.y0, sourceX: left, width: columnWidth });
+          bands.push({ kind: 'skip', y0: cursor, y1: iv.y0, sourceX: left, width: columnWidth });
           droppedGapHeight += iv.y0 - cursor;
         }
       }
       const start = iv.noClamp ? iv.y0 : Math.max(cursor, iv.y0);
       if (iv.y1 > start) {
         if (!iv.emit) {
-          segments.push({ kind: 'skip', y0: start, y1: iv.y1, sourceX: iv.sourceX, width: iv.width });
+          bands.push({ kind: 'skip', y0: start, y1: iv.y1, sourceX: iv.sourceX, width: iv.width });
           skippedIntervalCount += 1;
         } else {
-          segments.push({
+          bands.push({
             kind: iv.asText ? 'text' : 'image',
             y0: start,
             y1: iv.y1,
@@ -578,7 +578,7 @@ export function buildPageFlow(
     if (cursor < bottom) {
       // 尾巴同理：只有本栏底部这一段真的含图形时才保留
       if (gapHasFigure(cursor, bottom)) {
-        segments.push({ kind: 'image', y0: cursor, y1: bottom, sourceX: left, width: columnWidth });
+        bands.push({ kind: 'image', y0: cursor, y1: bottom, sourceX: left, width: columnWidth });
       } else {
         droppedGapHeight += bottom - cursor;
       }
@@ -609,7 +609,7 @@ export function buildPageFlow(
       runWidth = w;
     };
 
-    for (const seg of segments) {
+    for (const seg of bands) {
       if (seg.kind === 'skip') {
         flushRun(seg.y0);
         continue;

@@ -14,6 +14,8 @@
  * 这正是中译英的粗略字符数比。真实值需接入模型后校准。
  */
 
+import { hashText } from '../domain/translation';
+
 const SENTENCES = [
   '实验结果表明，该方法在标准数据集上取得了优于基线的性能。',
   '我们在本节中分析该现象背后的原因，并给出两种可能的解释。',
@@ -31,22 +33,14 @@ const SENTENCES = [
 
 const LENGTH_RATIO = 0.5;
 
-/** 确定性哈希：同一段原文永远得到同一段占位译文，便于反复对照排版 */
-function hashOf(text: string): number {
-  let hash = 2166136261;
-  for (let i = 0; i < text.length; i += 1) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return Math.abs(hash);
-}
-
 export function mockTranslate(source: string): string {
   const trimmed = source.trim();
   if (!trimmed) return '';
 
   const targetLength = Math.max(18, Math.round(trimmed.length * LENGTH_RATIO));
-  const start = hashOf(trimmed) % SENTENCES.length;
+  // 复用 domain/translation 的 hashText（审查 B5：两份 FNV-1a 合并为一份），
+  // 取 64 位哈希的低位做起点 —— 同一段原文永远得到同一段占位译文
+  const start = Number(BigInt('0x' + hashText(trimmed).slice(-8)) % BigInt(SENTENCES.length));
 
   let output = '';
   // 拼接完整句子，直到接近目标长度。
