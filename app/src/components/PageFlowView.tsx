@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, type MouseEvent, type ReactNode, type RefObject } from 'react';
 
 import type { PageFlow } from '../domain/pageFlow';
+import { maskInlineMath, unmaskInlineMath } from '../domain/inlineMath';
 import type { TextSpan } from '../types';
 
 /**
@@ -264,7 +265,11 @@ export function PageFlowView({ flow, sourceCanvas, baseFontSize, rootRef, onMeas
             {/* 不翻译的内容没有译文块 —— 这是「引用不需要翻译」在渲染上的落地 */}
             {node.translatable && node.target && (
               <p className="flow-target" style={{ fontSize: targetSize }}>
-                {node.target}
+                {/*
+                  译文里的 [[MATH_n]] 是行内公式占位符，回填成原公式后再显示 ——
+                  公式的完整性由代码保证，不依赖模型复述
+                */}
+                {unmaskInlineMath(node.target, maskInlineMath(node.source, node.spans).pieces).text}
               </p>
             )}
           </article>

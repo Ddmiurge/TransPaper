@@ -1,5 +1,6 @@
 import { median } from './stats';
 import { unionBBox } from './bbox';
+import { isMathChar } from './formulas';
 import type { Block, TextItem, TextLine, TextSpan } from '../types';
 
 /**
@@ -120,7 +121,8 @@ function appendSpan(
   end: number,
   bold: boolean,
   italic: boolean,
-  script?: TextSpan['script']
+  script?: TextSpan['script'],
+  math?: boolean
 ): void {
   if (end <= start) return;
   const last = spans[spans.length - 1];
@@ -128,17 +130,19 @@ function appendSpan(
   // 若因此把一个纯正文段落切成几十个碎片，片段数就完全失去意义了。
   // script 必须相同才能合并 —— 上下标与其相邻正文被空格隔开时，
   // 合并会把下标拍平回全尺寸（正是这个字段要修的问题）。
+  // math 同理：合并跨越正文会把正文也圈进公式片段，译时就被占位符吃掉。
   if (
     last &&
     last.bold === bold &&
     last.italic === italic &&
     last.script === script &&
+    !!last.math === !!math &&
     start - last.end <= 1
   ) {
     last.end = end;
     return;
   }
-  spans.push(script ? { start, end, bold, italic, script } : { start, end, bold, italic });
+  spans.push(script || math ? { start, end, bold, italic, script, math } : { start, end, bold, italic });
 }
 
 /** 把片段的偏移整体平移并裁剪到 [0, length) 之内 */
@@ -147,7 +151,7 @@ function shiftSpans(spans: TextSpan[], delta: number, length: number): TextSpan[
   for (const span of spans) {
     const start = Math.max(0, span.start + delta);
     const end = Math.min(length, span.end + delta);
-    if (end > start) appendSpan(out, start, end, span.bold, span.italic, span.script);
+    if (end > start) appendSpan(out, start, end, span.bold, span.italic, span.script, span.math);
   }
   return out;
 }
@@ -188,6 +192,18 @@ function makeLine(group: TextItem[], index: number, o: ParagraphBuildOptions): T
     return item.baselineY > mainBaseline ? 'sub' : 'sup';
   };
 
+  /**
+   * 行内公式判定（I19）：数学字体 / 上下标项 / 数学符号占比高，任一命中即算。
+   *
+   * 只标「片段」不改动文本 —— 翻译层据此把公式段替换成占位标记，
+   * 译完再原样回填（见 domain/inlineMath.ts）。
+   */
+  const isMathItem = (item: TextItem): boolean => {
+    if (scriptOf(item)) return true;
+    if (isMathFont(item.fontName)) return true;
+    return mathCharRatio(item.str) >= 0.4;
+  };
+
   let raw = '';
   const rawSpans: TextSpan[] = [];
   let prevRight = Number.NEGATIVE_INFINITY;
@@ -212,7 +228,7 @@ function makeLine(group: TextItem[], index: number, o: ParagraphBuildOptions): T
     }
     const start = raw.length;
     raw += item.str;
-    appendSpan(rawSpans, start, raw.length, item.bold, item.italic, scriptOf(item));
+    appendSpan(rawSpans, start, raw.length, item.bold, item.italic, scriptOf(item), isMathItem(item));
     prevRight = item.bbox.x + item.bbox.width;
   }
 
@@ -234,6 +250,34 @@ function makeLine(group: TextItem[], index: number, o: ParagraphBuildOptions): T
     columnIndex: first.columnIndex,
     fontSize,
   };
+}
+
+/**
+ * 数学字体判定。
+ *
+ * LaTeX 排版的公式用独立字体：CMMI（数学斜体）、CMSY（符号）、CMEX（大运算符），
+ * 以及 MathTime 的 MTMI/MTSY/MSAM。这些字体在正文里几乎不出现 ——
+ * 「字体是数学字体」比「这段文字长得像公式」可靠得多。
+ *
+ * 子集化字体名带 `ABCDEF+` 前缀，必须先剥掉。
+ */
+const MATH_FONT = /^(CMMI|CMMIB|CMSY|CMEX|CMEXB|MTMI|MTSY|MSAM|MSBM|MTEX)/i;
+
+function isMathFont(fontName: string): boolean {
+  if (!fontName) return false;
+  return MATH_FONT.test(fontName.replace(/^[A-Z]{6}\+/, ''));
+}
+
+/** 非空白字符里数学符号的占比（判据复用 formulas.ts，避免第二份实现） */
+function mathCharRatio(text: string): number {
+  let math = 0;
+  let total = 0;
+  for (const ch of text) {
+    if (/\s/.test(ch)) continue;
+    total += 1;
+    if (isMathChar(ch)) math += 1;
+  }
+  return total === 0 ? 0 : math / total;
 }
 
 /**
@@ -443,7 +487,9 @@ function makeBlock(group: TextLine[], index: number, pageIndex: number): Block {
     const base = raw.length;
     raw += line.text;
     for (const span of line.spans) {
-      appendSpan(rawSpans, base + span.start, base + span.end, span.bold, span.italic, span.script);
+      // math 必须随块级片段一起传递 —— 漏了它，行级标出的行内公式
+      // 会在块级合并时被吞掉（I19 定位到的正是这个丢失点）
+      appendSpan(rawSpans, base + span.start, base + span.end, span.bold, span.italic, span.script, span.math);
     }
   }
 

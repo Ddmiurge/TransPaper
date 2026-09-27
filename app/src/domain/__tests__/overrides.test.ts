@@ -5,7 +5,6 @@ import {
   applyOverride,
   applyOverrides,
   AutoJudgmentStash,
-  type AutoJudgmentStash as Stash,
 } from '../overrides';
 import type { Block } from '../../types';
 
@@ -122,6 +121,3 @@ describe('applyOverride', () => {
     expect(b.isBodyText).toBe(false);
   });
 });
-
-// 类型冒烟：Stash 与 AutoJudgmentStash 是同一类型
-type _Same = Stash extends AutoJudgmentStash ? true : false;

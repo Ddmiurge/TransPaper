@@ -80,7 +80,8 @@ export const DEFAULT_TRANSLATION_CONFIG: TranslationConfig = {
   provider: 'deepseek',
   model: 'deepseek-chat',
   targetLang: 'zh-Hans',
-  promptVersion: 2,
+  // v3（I19）：行内公式改为占位符 [[MATH_n]] 送译，新增占位符保留规则
+  promptVersion: 3,
 };
 
 // ────────────────────────────────────────────────────────────
@@ -152,6 +153,8 @@ export const TRANSLATION_SYSTEM_PROMPT = [
   '3. 行内数学公式必须原样保留：公式片段（含等号、运算符、括号、希腊字母、'
     + '上下标符号）逐字符照抄，不要翻译、不要改写、不要调整顺序、不要丢失符号；'
     + '例如 "where f(x) = y and g(z) ∈ W" 译为「其中 f(x) = y 且 g(z) ∈ W」',
+  '4. 原文里形如 [[MATH_0]] 的标记是行内公式占位符，必须**原封不动**地搬到译文中'
+    + '对应位置：不要翻译、不要改名、不要删除、不要新增空格',
   '4. 原样保留变量名、函数名、算法名与数据集名（如 F(x)、ResNet、ReLU、ImageNet）',
   '5. 原样保留引用编号与公式编号（如 [1]、[22, 21]、(3)）',
   '6. 图表题注保持编号格式：Figure N → 图 N，Table N → 表 N',

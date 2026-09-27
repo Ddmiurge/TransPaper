@@ -1,6 +1,40 @@
+# I19 任务清单 · 行内公式结构层保护（占位送译 + 回填）
+
+> 当前迭代：**I19** · 状态：**已完成** · 小结见 [iterations/I19-summary.md](iterations/I19-summary.md)
+
+## 目标
+
+让「行内公式不被翻译」从**提示词约束**升级为**结构保证**：公式字符根本不进译文生成过程。
+（I17 已完成提示词层，本迭代做结构层。）
+
+## 进度
+
+- [x] `TextSpan.math` + `paragraphBuilder` 三信号识别（数学字体 / 上下标 / 符号占比，复用 `isMathChar`）
+- [x] `domain/inlineMath.ts`：按 spans 偏移占位（不靠文本回找）、去重叠、保守回填（丢标记计 missing）
+- [x] 送译用占位文本（PageFlowBlock.register）；渲染回填（PageFlowView）
+- [x] 提示词第 4 条：占位符原封不动；**promptVersion 2 → 3**（ADR-011 铁律）
+- [x] 修块级 spans 漏传 `math` 的丢失点（行级标出、块级被吞）
+- [x] 单测 +12、真实 PDF +2（剩余文字比例 0.98，无整段被占位）
+
+## 结果
+
+| 指标 | 之前 | 现在 |
+|---|---|---|
+| 行内公式 | 随正文送译，靠提示词约束 | **占位后送译，译完回填，代码保证完整性** |
+| 公式密集页 | 公式暴露给模型 | 7 段中 3 段被保护，仅约 2% 字符占位 |
+| 测试 | 19 文件 / 191 用例 | **21 文件 / 205 用例** |
+
+## 下一迭代候选
+
+1. **真实 Key 全文校准**（用户决定放到最后做，注意它需要用户提供一个可用 Key）
+2. 术语表（I20b，按体验反馈再决定轻量版还是 ADR-005 完整版）
+3. 集合改名 UI（libraryStore.renameCollection 已就绪，只差入口）
+
+---
+
 # I18 任务清单 · 块类型手动改判入口（ADR-004 欠账兑现）
 
-> 当前迭代：**I18** · 状态：**已完成** · 小结见 [iterations/I18-summary.md](iterations/I18-summary.md)
+> I18 · 状态：**已完成** · 小结见 [iterations/I18-summary.md](iterations/I18-summary.md)
 
 ## 目标
 

@@ -34,7 +34,7 @@ const MATH_WORDS = new Set([
 ]);
 
 /** 判断一个字符是否属于「数学符号」——出现在运算、集合、希腊字母等区间 */
-function isMathChar(ch: string): boolean {
+export function isMathChar(ch: string): boolean {
   const c = ch.codePointAt(0) ?? 0;
   return (
     (c >= 0x2200 && c <= 0x22ff) || // ∀∃∈∑∏√≈≠≤≥∞ ← 运算符与数学符号

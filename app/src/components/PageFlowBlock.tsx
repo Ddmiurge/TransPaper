@@ -5,6 +5,7 @@ import { buildPageFlow } from '../domain/pageFlow';
 import { figurePathBoxes, isEnclosedByGraphics } from '../domain/figureRegions';
 import { analyzePage } from '../domain/pipeline';
 import { applyOverrides, AutoJudgmentStash } from '../domain/overrides';
+import { maskInlineMath } from '../domain/inlineMath';
 import { overrideStore } from '../state/overrideStore';
 import { mockTranslate } from '../mock/translations';
 import { canvasHasInk } from '../pdf/canvasUtils';
@@ -249,10 +250,12 @@ export function PageFlowBlock({
   // 登记待翻译段落。**幂等**，所以缩放切换导致的重渲染是安全的
   useEffect(() => {
     if (!data) return;
+    // 行内公式先占位：公式字符根本不进译文生成过程（I19 结构层保护），
+    // 译完由渲染层按同一批 spans 回填原公式
     translationStore.register(
       data.analysis.blocks
         .filter((b) => b.isBodyText && b.translatable)
-        .map((b) => ({ id: b.id, text: b.text }))
+        .map((b) => ({ id: b.id, text: maskInlineMath(b.text, b.spans).masked }))
     );
   }, [data]);
 
