@@ -1,3 +1,27 @@
+# I24 任务清单 · 轻量 CI + 桌面安装脚本
+
+> I24 · 状态：**已完成** · 小结见 [iterations/I24-summary.md](iterations/I24-summary.md)
+
+## 目标
+
+质量门禁从「每次迭代手动跑」变成「push 必跑、机器执行」；桌面应用有日常安装入口。
+
+## 进度
+
+- [x] `.github/workflows/ci.yml`：push/PR 自动跑 npm build（tsc+vite）→ vitest 全量 →
+      三基线回归（FIXTURE= 显式触发）→ cargo test
+- [x] 编排细节：`generate_context!` 编译期需要 `app/dist`（先前端后 Rust）；
+      ubuntu 编译 Tauri 需 apt 装 WebKit2GTK 等系统依赖
+- [x] `app/scripts/install-app.sh`：ad-hoc 签名 + 装到 /Applications（已实际执行验证）
+- [x] **FTS5 全文检索经用户确认正式搁置**（搜标题/标签够用，等需求真实出现）
+
+## 下一迭代候选
+
+1. 真实 Key 全文校准（用户决定放到接近成品时）
+2. 公证（需 Apple Developer 账号）+ 正式分发 / 三平台打包矩阵
+
+---
+
 # I23 任务清单 · SQLite 存储底座（桌面化第三步）
 
 > I23 · 状态：**已完成** · 小结见 [iterations/I23-summary.md](iterations/I23-summary.md)

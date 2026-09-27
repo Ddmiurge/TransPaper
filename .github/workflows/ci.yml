@@ -1,0 +1,60 @@
+# 持续集成（I24）：每次 push 到 main（或开 PR）自动跑全套质量门禁。
+#
+# 为什么这样编排：
+# - 单 job 顺序执行 —— Rust 侧的 tauri::generate_context! 宏在**编译期**把
+#   frontendDist（app/dist）嵌进二进制，所以必须先 npm run build 再 cargo test。
+# - realPdf 三基线是本项目最硬的回归门禁（16/42/17 页真实 PDF 全链路解析），
+#   默认 vitest run 只跑默认 fixture，三基线必须用 FIXTURE= 分别触发。
+# - ubuntu 上编译 Tauri 需要系统级 WebKit/GTK 依赖，apt 一次装齐。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node 22（npm 缓存）
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Rust stable（编译缓存）
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 类型检查 + 前端构建（同时产出 dist 供 Rust 编译嵌入）
+        run: npm run build
+
+      - name: 前端全量测试
+        run: npx vitest run
+
+      - name: 真实 PDF 三基线回归
+        run: |
+          npx vitest run src/pdf/__tests__/realPdf.test.ts
+          FIXTURE=single-column-sample.pdf MAX_PAGES=42 npx vitest run src/pdf/__tests__/realPdf.test.ts
+          FIXTURE=acl-sample.pdf MAX_PAGES=17 npx vitest run src/pdf/__tests__/realPdf.test.ts
+
+      - name: 安装 Tauri 的 Linux 系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Rust 测试
+        run: cargo test
+        working-directory: app/src-tauri
