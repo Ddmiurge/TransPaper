@@ -6,11 +6,15 @@ import { libraryStore } from './library/libraryStore';
 import type { PaperMeta } from './library/types';
 import { PageFlowBlock, type PageReadyInfo } from './components/PageFlowBlock';
 import type { FlowMeasurement } from './components/PageFlowView';
+import type { BlockContextMenuInfo } from './components/PageFlowView';
+import { OverrideMenu } from './components/OverrideMenu';
 import { analyzePage } from './domain/pipeline';
 import { findTitleBlock } from './domain/frontMatter';
+import type { OverrideKind } from './domain/overrides';
 import { selfCheck, type SelfCheckReport } from './domain/selfCheck';
 import { TranslationBar } from './components/TranslationBar';
 import { translationStore } from './state/translationStore';
+import { overrideStore } from './state/overrideStore';
 import { extractPageItems, loadPdf } from './pdf/pdfjsAdapter';
 import type { PageAnalysis } from './types';
 
@@ -171,6 +175,30 @@ export default function App() {
   const [geometryConfidence, setGeometryConfidence] = useState(1);
 
   const [flowMeasure, setFlowMeasure] = useState<FlowMeasurement | null>(null);
+
+  // ── 手动改判（I18）──
+  /** 右键改判菜单：null = 关闭 */
+  const [overrideMenu, setOverrideMenu] = useState<{ info: BlockContextMenuInfo; x: number; y: number } | null>(null);
+
+  const handleBlockContextMenu = useCallback((info: BlockContextMenuInfo, x: number, y: number) => {
+    setOverrideMenu({ info, x, y });
+  }, []);
+
+  /**
+   * 应用一条改判：store 立即生效（该页重渲染），入库论文同步写回 PaperMeta。
+   * fixture / 直接打开的文件没有持久化位置 —— 本次会话内有效，已在菜单语义上接受。
+   */
+  const handleOverridePick = useCallback(
+    (kind: OverrideKind) => {
+      const menu = overrideMenu;
+      setOverrideMenu(null);
+      if (!menu) return;
+      overrideStore.set(menu.info.anchor, kind);
+      const paperId = currentPaperId;
+      if (paperId) void libraryStore.setOverrides(paperId, overrideStore.exportOverrides());
+    },
+    [overrideMenu, currentPaperId]
+  );
 
   const handleMeasured = useCallback((m: FlowMeasurement) => setFlowMeasure(m), []);
 
@@ -400,6 +428,8 @@ export default function App() {
           });
           if (cancelled) return;
           setCurrentPaperId(meta.id);
+          // 重复打开同一文件时 add() 会保留原条目 —— 改判历史随之恢复
+          overrideStore.setDoc(meta.id, meta.overrides);
           // 库里已有这篇的阅读进度（重复打开）→ 恢复到上次的位置
           if (meta.lastPage > 1 && meta.lastPage <= doc.numPages) {
             setPageNumber(meta.lastPage);
@@ -407,8 +437,12 @@ export default function App() {
           }
         } else if (source.kind === 'library') {
           setCurrentPaperId(source.id);
+          const meta = libraryStore.getSnapshot().papers.find((p) => p.id === source.id);
+          overrideStore.setDoc(source.id, meta?.overrides ?? []);
         } else {
           setCurrentPaperId(null);
+          // 无持久化位置的文档也允许会话内改判 —— docKey 用标签合成，避免跨文档撞锚点
+          overrideStore.setDoc(`session:${source.label}`, []);
         }
       } catch (e) {
         if (cancelled) return;
@@ -618,6 +652,7 @@ export default function App() {
                 docReadingWidth={docReadingWidth}
                 onReady={handlePageReady}
                 onMeasured={handleMeasured}
+                onBlockContextMenu={handleBlockContextMenu}
               />
             ))}
           </div>
@@ -625,6 +660,16 @@ export default function App() {
 
       </main>
       </div>
+
+      {overrideMenu && (
+        <OverrideMenu
+          info={overrideMenu.info}
+          x={overrideMenu.x}
+          y={overrideMenu.y}
+          onPick={handleOverridePick}
+          onClose={() => setOverrideMenu(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1007,3 +1007,72 @@ button.primary:disabled {
   color: var(--accent);
   border-color: var(--accent);
 }
+
+/* ── I18 手动改判菜单 ── */
+.override-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 224px;
+  padding: 6px;
+  background: #262b31;
+  border: 1px solid #3a4048;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.override-menu-preview {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #9aa4ae;
+  border-bottom: 1px solid #3a4048;
+  margin-bottom: 6px;
+  word-break: break-all;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.override-menu-state {
+  padding: 2px 8px 6px;
+  font-size: 12px;
+  color: #c6cdd4;
+}
+
+.override-menu button {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.override-menu button:hover:not(:disabled) {
+  background: #333a42;
+}
+
+.override-menu button.is-current {
+  background: #2c3a33;
+  outline: 1px solid #3d5a48;
+}
+
+.override-menu button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.override-menu-label {
+  font-size: 13px;
+}
+
+.override-menu-hint {
+  font-size: 11px;
+  color: #8b949d;
+}

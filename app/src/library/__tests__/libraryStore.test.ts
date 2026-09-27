@@ -244,3 +244,28 @@ describe('filterPapers 纯过滤', () => {
     expect(filterPapers(papers, { kind: 'collection', id: 'c1' }, '综述').map((p) => p.id)).toEqual(['1']);
   });
 });
+
+describe('块改判持久化（I18）', () => {
+  it('setOverrides 写回后可从快照读出，重复写相同内容不落库', async () => {
+    const { store } = makeStore();
+    const meta = await store.add(input());
+
+    const overrides = [{ anchor: '0|Introduction', kind: 'body' as const }];
+    await store.setOverrides(meta.id, overrides);
+    expect(store.getSnapshot().papers.find((p) => p.id === meta.id)?.overrides).toEqual(overrides);
+
+    // 未入库的论文 id → 静默忽略，不抛错
+    await expect(store.setOverrides('no-such-id', overrides)).resolves.toBeUndefined();
+  });
+
+  it('重复打开同一文件（去重命中）保留原有改判 —— 改判跨会话存活', async () => {
+    const { store } = makeStore();
+    const meta = await store.add(input());
+    await store.setOverrides(meta.id, [{ anchor: '0|Some block', kind: 'figure' }]);
+
+    // 同文件再入库：走 normalizeMeta 合并旧条目
+    const again = await store.add(input());
+    expect(again.id).toBe(meta.id);
+    expect(again.overrides).toEqual([{ anchor: '0|Some block', kind: 'figure' }]);
+  });
+});

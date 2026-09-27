@@ -8,6 +8,8 @@
  * 只有真正打开某篇时才去 files 取二进制。
  */
 
+import type { BlockOverride } from '../domain/overrides';
+
 /** 一个集合（专题 / 文件夹）—— 论文可以按主题归入，一篇可属于多个集合 */
 export interface Collection {
   /** 稳定 id。建集合时生成（crypto.randomUUID） */
@@ -35,6 +37,11 @@ export interface PaperMeta {
   collectionIds: string[];
   /** 自由标签（如「精读」「实验」），用于交叉检索 */
   tags: string[];
+  /**
+   * 块类型手动改判（I18，ADR-004）。按内容锚点持久化，重新解析后存活。
+   * 只对入库的论文持久化；fixture / 直接打开的文件仅本次会话生效。
+   */
+  overrides: BlockOverride[];
 }
 
 /**
@@ -53,5 +60,6 @@ export function normalizeMeta(meta: Partial<PaperMeta> & { id: string }): PaperM
     lastPage: meta.lastPage ?? 1,
     collectionIds: meta.collectionIds ?? [],
     tags: meta.tags ?? [],
+    overrides: meta.overrides ?? [],
   };
 }

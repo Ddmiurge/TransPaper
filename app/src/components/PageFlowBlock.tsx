@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { PageFlowView, type FlowMeasurement } from './PageFlowView';
+import { PageFlowView, type FlowMeasurement, type BlockContextMenuInfo } from './PageFlowView';
 import { buildPageFlow } from '../domain/pageFlow';
 import { figurePathBoxes, isEnclosedByGraphics } from '../domain/figureRegions';
 import { analyzePage } from '../domain/pipeline';
+import { applyOverrides, AutoJudgmentStash } from '../domain/overrides';
+import { overrideStore } from '../state/overrideStore';
 import { mockTranslate } from '../mock/translations';
 import { canvasHasInk } from '../pdf/canvasUtils';
 import { extractPageItems, renderPageToOffscreen } from '../pdf/pdfjsAdapter';
@@ -69,6 +71,8 @@ interface Props {
   onReady: (pageNumber: number, info: PageReadyInfo) => void;
   /** 渲染完成后的测量结果（面板用）。瀑布流下由外层只保留最新一份 */
   onMeasured?: (m: FlowMeasurement) => void;
+  /** 段落右键（I18 手动改判），由 App 统一渲染菜单 */
+  onBlockContextMenu?: (info: BlockContextMenuInfo, x: number, y: number) => void;
 }
 
 /**
@@ -93,12 +97,19 @@ export function PageFlowBlock({
   docReadingWidth,
   onReady,
   onMeasured,
+  onBlockContextMenu,
 }: Props) {
   const [data, setData] = useState<PageData | null>(null);
   const [error, setError] = useState('');
   const rootRef = useRef<HTMLDivElement | null>(null);
   /** 防止 scale 变化时重复触发：一页只加载一次 */
   const startedRef = useRef(false);
+  /**
+   * 自动判定暂存（I18）：改判与撤销都从这里出发才能幂等 ——
+   * 块字段被改判覆写后，没有「自动值」就回不去了。
+   * 生命周期跟页面的 analysis 一致（每页一份）。
+   */
+  const stashRef = useRef(new AutoJudgmentStash());
 
   useEffect(() => {
     if (!doc || !enabled || startedRef.current) return;
@@ -175,6 +186,10 @@ export function PageFlowBlock({
         // 整张表格照样丢失（表格没有矢量路径，几何来源只能是识别出的矩形本身）。
         const sliceGeometry = figurePaths.concat(analysis.tableRegions.map((t) => t.bbox));
 
+        // 手动改判（I18）：在 buildPageFlow 之前套用 —— 块的最终判定
+        // 是「自动判定 + 用户改判」两层叠加（ADR-004 的双层设计）
+        applyOverrides(analysis.blocks, overrideStore.getSnapshot().byAnchor, stashRef.current);
+
         setData({
           analysis,
           geometryConfidence,
@@ -204,6 +219,16 @@ export function PageFlowBlock({
       });
     }
   }, [data, pageNumber, onReady]);
+
+  // 改判变化（I18）：从暂存的自动值出发重新套用，再整体重建文档流。
+  // 恢复是幂等的 —— 覆写多少次都能回到自动判定
+  useEffect(() => {
+    return overrideStore.subscribe(() => {
+      if (!data) return;
+      applyOverrides(data.analysis.blocks, overrideStore.getSnapshot().byAnchor, stashRef.current);
+      setData({ ...data });
+    });
+  }, [data]);
 
   /**
    * 可译段落的 blockId。
@@ -261,6 +286,8 @@ export function PageFlowBlock({
       figureRegions: data.figureRegions,
       // 文档级行宽基准：收尾页只有半栏内容时仍按常规行宽排
       readingWidth: docReadingWidth > 0 ? docReadingWidth : undefined,
+      // 手动改判：文本节点据此打 overridden 标记（块本身的改判已在 analyze 后套用）
+      overrides: overrideStore.getSnapshot().byAnchor,
     });
   }, [data, translations, hasContent, docReadingWidth]);
 
@@ -291,6 +318,7 @@ export function PageFlowBlock({
         baseFontSize={baseFontSize}
         rootRef={rootRef}
         onMeasured={onMeasured}
+        onBlockContextMenu={onBlockContextMenu}
       />
       {scanned && (
         <p className="flow-page-placeholder bad">

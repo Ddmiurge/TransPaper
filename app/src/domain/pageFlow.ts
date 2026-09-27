@@ -1,5 +1,6 @@
 import { coveredColumnIndexes } from './columns';
 import { coverageRatio, intersectionArea, intersectionRect, intersects, unionBBox } from './bbox';
+import { anchorOf } from './overrides';
 import type { BBox, Block, PageAnalysis, TextSpan } from '../types';
 
 /**
@@ -70,6 +71,12 @@ export interface FlowText {
   fontScale: number;
   /** 版面宽度（该栏内容宽） */
   width: number;
+  /**
+   * 改判锚点（I18 手动改判）。右键菜单据此定位这条块，与块 id 的序号性解耦。
+   */
+  anchor: string;
+  /** 当前是否被手动改判及其类型；null = 自动判定。渲染层据此标注 */
+  overridden: string | null;
 }
 
 export type FlowNode = FlowSlice | FlowText;
@@ -214,6 +221,13 @@ export interface PageFlowOptions {
    */
 
   minSegmentHeight?: number;
+
+  /**
+   * 当前文档的手动改判（I18）。键 = 改判锚点（anchorOf）。
+   * 只用于给文本节点打 `overridden` 标记；块本身的改判由调用方在
+   * analyzePage 之后应用（见 domain/overrides.ts 的 applyOverrides）。
+   */
+  overrides?: ReadonlyMap<string, import('./overrides').OverrideKind>;
 }
 
 export function buildPageFlow(
@@ -620,6 +634,7 @@ export function buildPageFlow(
         const block = seg.block;
         if (block) {
           const target = translations.get(block.id) ?? null;
+          const anchor = anchorOf(block);
           nodes.push({
             kind: 'text',
             id: `p${pageIndex}-c${columnIndex}-x${textSeq}`,
@@ -633,6 +648,8 @@ export function buildPageFlow(
             bold: block.bold,
             fontScale: block.fontScale,
             width: readingWidth,
+            anchor,
+            overridden: options.overrides?.get(anchor) ?? null,
           });
           textSeq += 1;
         }

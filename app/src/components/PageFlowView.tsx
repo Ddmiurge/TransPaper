@@ -1,4 +1,4 @@
-import { useLayoutEffect, type ReactNode, type RefObject } from 'react';
+import { useCallback, useLayoutEffect, type MouseEvent, type ReactNode, type RefObject } from 'react';
 
 import type { PageFlow } from '../domain/pageFlow';
 import type { TextSpan } from '../types';
@@ -90,6 +90,22 @@ interface Props {
   baseFontSize: number;
   rootRef: RefObject<HTMLDivElement | null>;
   onMeasured?: (m: FlowMeasurement) => void;
+  /**
+   * 段落右键（I18 手动改判）。在文档流容器上做事件委托——
+   * 每个文本节点几百个，逐个挂监听不如在根上接一次。
+   */
+  onBlockContextMenu?: (info: BlockContextMenuInfo, x: number, y: number) => void;
+}
+
+/** 右键命中的段落信息（给改判菜单用） */
+export interface BlockContextMenuInfo {
+  blockId: string;
+  /** 改判锚点（页码 + 归一化文本前缀，见 domain/overrides.ts） */
+  anchor: string;
+  /** 段落文本（菜单里展示，帮助用户确认改的是哪段） */
+  text: string;
+  /** 当前是否已被手动改判及其类型；null = 自动判定 */
+  overridden: string | null;
 }
 
 /**
@@ -101,9 +117,32 @@ interface Props {
  * 译文不是"浮在原文上的层"，而是文档流里的普通段落 —— 因此"每段原文下方紧跟译文"
  * 是字面意义上的实现，不存在覆盖或重叠的可能。
  */
-export function PageFlowView({ flow, sourceCanvas, baseFontSize, rootRef, onMeasured }: Props) {
+export function PageFlowView({ flow, sourceCanvas, baseFontSize, rootRef, onMeasured, onBlockContextMenu }: Props) {
   const contentWidth = Math.max(1, flow.stats.contentWidth);
   const measure = Math.min(contentWidth, MEASURE_EM * baseFontSize);
+
+  /** 右键委托：从事件目标向上找文本节点，命中才交给菜单 */
+  const handleContextMenu = useCallback(
+    (e: MouseEvent) => {
+      if (!onBlockContextMenu) return;
+      const el = (e.target as HTMLElement).closest<HTMLElement>('[data-block-id]');
+      if (!el) return;
+      e.preventDefault();
+      const node = flow.nodes.find((n) => n.kind === 'text' && n.blockId === el.dataset.blockId);
+      if (!node || node.kind !== 'text') return;
+      onBlockContextMenu(
+        {
+          blockId: node.blockId,
+          anchor: node.anchor ?? '',
+          text: node.source,
+          overridden: node.overridden ?? null,
+        },
+        e.clientX,
+        e.clientY
+      );
+    },
+    [flow.nodes, onBlockContextMenu]
+  );
 
   /**
    * 图形切片的显示缩放 —— **按图自身的宽度**算，而不是整幅版心的统一比例。
@@ -187,6 +226,7 @@ export function PageFlowView({ flow, sourceCanvas, baseFontSize, rootRef, onMeas
       ref={rootRef}
       className="page-flow"
       style={{ width: Math.round(measure), fontSize: baseFontSize }}
+      onContextMenu={handleContextMenu}
     >
       {flow.nodes.map((node) => {
         if (node.kind === 'slice') {
@@ -203,6 +243,7 @@ export function PageFlowView({ flow, sourceCanvas, baseFontSize, rootRef, onMeas
         return (
           <article
             key={node.id}
+            data-block-id={node.blockId}
             className={`flow-block${isHeading ? ' flow-block--heading' : ''}`}
           >
             <HeadingTag

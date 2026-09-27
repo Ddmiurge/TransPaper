@@ -1,5 +1,6 @@
 import { IdbLibraryDb, type LibraryDb } from './db';
 import { normalizeMeta, type Collection, type PaperMeta } from './types';
+import type { BlockOverride } from '../domain/overrides';
 
 /**
  * 论文库 store（模块级单例，模式与 translationStore 一致）。
@@ -224,6 +225,18 @@ export class LibraryStore {
     const cleaned = dedupeTags(tags);
     if (sameTags(cleaned, current.tags)) return;
     await this.persistPaper({ ...current, tags: cleaned });
+  }
+
+  /**
+   * 写回块类型手动改判（I18）。全量替换：改判条目很少（一篇通常个位数），
+   * 全量写比增删改简单且不会出现部分写坏的状态。
+   * 同锚点重复改判由调用方先去重（后写覆盖先写）。
+   */
+  async setOverrides(paperId: string, overrides: BlockOverride[]): Promise<void> {
+    const current = this.snapshot.papers.find((p) => p.id === paperId);
+    if (!current) return;
+    if (JSON.stringify(current.overrides) === JSON.stringify(overrides)) return;
+    await this.persistPaper({ ...current, overrides });
   }
 
   /** 给论文加一个标签（已存在则忽略） */

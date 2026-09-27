@@ -1,6 +1,43 @@
+# I18 任务清单 · 块类型手动改判入口（ADR-004 欠账兑现）
+
+> 当前迭代：**I18** · 状态：**已完成** · 小结见 [iterations/I18-summary.md](iterations/I18-summary.md)
+
+## 目标
+
+「自动判定 + 用户改判」两层设计（ADR-004）的第二层：右键任意段落改判类型，
+以内容锚点持久化、重新解析后存活。I17 表格识别上线后误判面变大，这是放开判据的前提。
+
+## 进度
+
+- [x] `domain/overrides.ts`：`anchorOf`（页码+归一化文本前缀）/ `AutoJudgmentStash` / `applyOverrides`（幂等）
+- [x] `library`：`PaperMeta.overrides` 持久化 + `setOverrides` + normalizeMeta 兜底
+- [x] `state/overrideStore.ts`：订阅式单例，按文档整体注水/重置
+- [x] `PageFlowView`：contextmenu 事件委托 + `data-block-id`；`FlowText` 增 anchor/overridden
+- [x] `OverrideMenu` 组件（用户视角文案、当前判定、边缘内收、Escape 关闭）
+- [x] `PageFlowBlock`：解析后套用改判 + 订阅重套 + `buildPageFlow` 传 overrides
+- [x] `App`：菜单渲染、docKey 注水（file 重复打开自动恢复历史改判）、入库回写
+- [x] 单测 +8（锚点稳定性/幂等/撤销恢复/formula/reference 语义/持久化/跨会话存活）
+- [x] e2e `scripts/verify-override.mjs`：右键改判 → 移出文本流 → 刷新存活，全过
+
+## 结果
+
+| 指标 | 之前 | 现在 |
+|---|---|---|
+| 自动判据误判 | 死局（无纠正入口） | **右键改判，五类型 + 恢复自动** |
+| 改判寿命 | — | **入库论文持久化，重析/重开/刷新均存活** |
+| 测试 | 18 文件 / 180 用例 | **19 文件 / 191 用例** |
+
+## 下一迭代（I19）候选
+
+1. 行内公式结构层拆分（提示词层已完成，promptVersion=2）
+2. 真实 Key 全文校准 + 术语表（I20）
+3. 集合改名 UI（libraryStore.renameCollection 已就绪，只差入口）
+
+---
+
 # I17 任务清单 · 文字表格识别（统一切片保留原样）
 
-> 当前迭代：**I17** · 状态：**已完成** · 小结见 [iterations/I17-summary.md](iterations/I17-summary.md)
+> I17 · 状态：**已完成** · 小结见 [iterations/I17-summary.md](iterations/I17-summary.md)
 > 决策记录见 [ADR-015](../docs/adr/ADR-015-text-tables-as-slices.md)
 
 ## 目标
