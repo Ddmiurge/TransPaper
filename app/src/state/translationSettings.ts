@@ -98,6 +98,13 @@ export const PROVIDER_PRESETS: Array<{
     origin: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   },
   {
+    id: 'mimo',
+    label: 'MiMo（小米）',
+    model: 'mimo-v2.6-pro',
+    upstream: 'api.xiaomimimo.com/v1',
+    origin: 'https://api.xiaomimimo.com/v1',
+  },
+  {
     id: 'local',
     label: '本地 / 自建（Ollama 等）',
     model: 'qwen2.5:7b',

@@ -218,8 +218,18 @@ function SettingsPanel() {
       </div>
 
       <p className="settings-note">
-        Key 目前存在浏览器 localStorage 里 —— <strong>这不是安全的做法</strong>，任何能在此页面执行脚本的代码都能读到它。
-        这只是浏览器原型的临时方案，正式版会改为系统钥匙串。在此之前请使用<strong>额度受限的专用 Key</strong>。
+        {isDesktop() ? (
+          <>
+            Key 保存在<strong> macOS 系统钥匙串</strong>（service=com.ddmiurge.transpaper），
+            不写入任何文件或网页存储 —— 本提示不会以明文形式出现在磁盘上。
+          </>
+        ) : (
+          <>
+            Key 目前存在浏览器 localStorage 里 —— <strong>这不是安全的做法</strong>，
+            任何能在此页面执行脚本的代码都能读到它。这只是浏览器原型的临时方案，
+            桌面版会改为系统钥匙串。在此之前请使用<strong>额度受限的专用 Key</strong>。
+          </>
+        )}
       </p>
     </div>
   );
