@@ -56,6 +56,10 @@
 | ADR-006 | 解析器 sidecar 子进程隔离 | `pdf/pdfjsAdapter.ts` 同进程 | M3（当前矢量路径方案在主进程已够用） |
 | ADR-002 | Block/Segment 分表 + N:1 聚合 | Segment 为 Block 的 1:1 内存派生 | N:1 聚合立项时（见 CODE_AUDIT.md D1） |
 
+**桌面化进度（ADR-016）**：`app/src-tauri/` 已建 Tauri 2 外壳（**第一步「薄壳」**——
+窗口承载现有前端，存储仍是 IndexedDB）。第二步换 SQLite + 系统钥匙串后，
+ADR-007 才算兑现，届时本表会相应更新。跨平台约定见 ADR-016。
+
 其余 ADR（008–015、002 的双层语义、004/005 的免译与缓存设计）与实现一致。
 已废弃/被取代的 ADR 状态见 `adr/` 各文件头部。
 

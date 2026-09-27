@@ -1,0 +1,4 @@
+# Rust 构建产物（几百 MB，不入库）
+target/
+# Tauri 生成的 schema（构建时生成）
+gen/schemas/

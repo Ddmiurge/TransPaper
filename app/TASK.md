@@ -1,6 +1,60 @@
+# I21 任务清单 · 桌面化第一步「薄壳」（Tauri 2 · macOS）
+
+> 当前迭代：**I21** · 状态：**已完成** · 小结见 [iterations/I21-summary.md](iterations/I21-summary.md)
+> 决策记录见 [ADR-016](../docs/adr/ADR-016-desktop-shell-tauri-and-cross-platform.md)
+
+## 目标
+
+兑现 `docs/06` 的 M2 形态：从「浏览器里的页面」变成真正的桌面应用。
+第一步只做外壳，**存储仍是 IndexedDB**，把风险压到最低。
+
+## 进度
+
+- [x] Rust 工具链（rustup 1.98.1；Xcode CLT 已存在）
+- [x] `src-tauri/` 骨架：Cargo.toml / tauri.conf.json / main.rs / build.rs / capabilities / icons
+- [x] npm：`@tauri-apps/cli@2`、`@tauri-apps/api@2`，脚本 `tauri:dev` / `tauri:build`
+- [x] 改前端：**无**（领域层与 UI 整块复用，见 ADR-016）
+- [x] `tauri build` 产出 `TransPaper.app`（5.16 MiB）
+- [x] 前端回归：tsc 0 错误、21 文件 / 205 用例全绿
+
+## 已知限制
+
+- **DMG 在受限沙箱内打不了**（需挂载 /Volumes）；targets 已改为只打 `app`
+- 存储仍是 IndexedDB，ADR-007（SQLite）尚未兑现；Key 仍在 localStorage
+- 只在 macOS/aarch64 上构建过；Windows/Linux 需 CI 或对应机器
+
+## 下一迭代（桌面化第二步）
+
+1. **`app_data_dir` + SQLite**（`docs/04` 完整 DDL，含 FTS5 trigram 全文检索）
+2. **系统钥匙串**存 API Key（ADR-011 §5 安全欠账）
+3. **三平台 CI 矩阵**（GitHub Actions：macos / windows / ubuntu）
+4. 之后才能真测 M2 性能指标
+
+---
+
+# I20 任务清单 · 集合改名 UI
+
+> I20 · 状态：**已完成** · 小结见 [iterations/I20-summary.md](iterations/I20-summary.md)
+
+## 进度
+
+- [x] 侧边栏集合项 ✎ 内联改名（回车提交 / Esc 取消 / 失焦提交）
+- [x] e2e 追加改名 → 刷新后仍生效
+- [x] 修 e2e 不可重复的根因：profile 复用导致 IndexedDB 残留（跑前清空）
+
+## 下一迭代候选
+
+1. **Web → Tauri 桌面化**（用户关注；硬前提：本机 Rust 工具链未安装，需先装 rustup）
+   - 建议第一步做「薄壳」：Tauri 窗口跑现有 Web 应用（保留 IndexedDB），先拿到真正
+     的桌面应用形态与文件系统；第二步再换 SQLite（docs/04 有完整 DDL）+ 系统钥匙串
+2. 集合拖拽归类 / 全文检索（Web 形态下可用 FlexSearch，迁 SQLite 后换 FTS5 trigram）
+3. 真实 Key 全文校准 + 术语表 —— 用户决定放到「接近成品」时再做
+
+---
+
 # I19 任务清单 · 行内公式结构层保护（占位送译 + 回填）
 
-> 当前迭代：**I19** · 状态：**已完成** · 小结见 [iterations/I19-summary.md](iterations/I19-summary.md)
+> I19 · 状态：**已完成** · 小结见 [iterations/I19-summary.md](iterations/I19-summary.md)
 
 ## 目标
 
