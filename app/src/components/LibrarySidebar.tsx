@@ -91,6 +91,18 @@ export function LibrarySidebar({ currentId, onOpen, onDelete }: Props) {
   const [menuFor, setMenuFor] = useState<string | null>(null);
   /** 新建集合输入框 */
   const [newColl, setNewColl] = useState('');
+  /** 正在改名的集合 id（I20）—— 内联编辑，不需要弹窗 */
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+
+  const commitRename = async () => {
+    const id = renamingId;
+    const name = renameValue.trim();
+    setRenamingId(null);
+    setRenameValue('');
+    if (!id || !name) return;
+    await libraryStore.renameCollection(id, name);
+  };
 
   const scope = useMemo(() => scopeFromKey(scopeKeyState), [scopeKeyState]);
 
@@ -158,8 +170,49 @@ export function LibrarySidebar({ currentId, onOpen, onDelete }: Props) {
               className={`library-nav-item${active ? ' is-active' : ''}`}
               onClick={() => setScopeKeyState(key)}
             >
-              <span className="library-nav-label">{label}</span>
+              {/* 改名：内联输入，回车提交 / Esc 取消（I20） */}
+              {s.kind === 'collection' && renamingId === s.id ? (
+                <input
+                  className="library-nav-rename"
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  onBlur={() => void commitRename()}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') void commitRename();
+                    if (e.key === 'Escape') {
+                      setRenamingId(null);
+                      setRenameValue('');
+                    }
+                  }}
+                />
+              ) : (
+                <span className="library-nav-label">{label}</span>
+              )}
               <span className="library-nav-count">{countInScope(papers, s)}</span>
+              {s.kind === 'collection' && renamingId !== s.id && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  title="重命名集合"
+                  className="library-nav-rename-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setRenamingId(s.id);
+                    setRenameValue(label);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setRenamingId(s.id);
+                      setRenameValue(label);
+                    }
+                  }}
+                >
+                  ✎
+                </span>
+              )}
               {s.kind === 'collection' && (
                 <span
                   role="button"

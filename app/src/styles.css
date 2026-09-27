@@ -1076,3 +1076,26 @@ button.primary:disabled {
   font-size: 11px;
   color: #8b949d;
 }
+
+/* ── I20 集合改名 ── */
+.library-nav-rename-btn {
+  margin-left: auto;
+  font-size: 12px;
+  color: #8b949d;
+  cursor: pointer;
+}
+
+.library-nav-rename-btn:hover {
+  color: var(--text);
+}
+
+.library-nav-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 4px;
+  font-size: 13px;
+  color: var(--text);
+  background: #1b1f24;
+  border: 1px solid #4a5560;
+  border-radius: 4px;
+}

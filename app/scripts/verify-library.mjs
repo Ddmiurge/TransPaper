@@ -93,6 +93,10 @@ async function waitUntil(cdp, expression, timeoutMs = 20000, label = '') {
 
 async function main() {
   if (!existsSync(FIXTURE)) throw new Error(`找不到 fixture: ${FIXTURE}`);
+  // 每次跑都用干净的浏览器 profile：IndexedDB 会在 profile 目录里留存，
+  // 上一轮的「深度学习」会混进本轮导航，让断言变得不可重复
+  const { rmSync } = await import('node:fs');
+  rmSync('/tmp/edge-lib-profile', { recursive: true, force: true });
 
   const edge = spawn(
     EDGE,
@@ -212,6 +216,36 @@ async function main() {
     const persistedTag = await cdp.evaluate(`[...document.querySelectorAll('.library-tag')].some(e => e.textContent === '精读')`);
     console.log(`[5] 刷新后 集合持久化=${persistedColl} 标签持久化=${persistedTag}`);
     if (!persistedColl || !persistedTag) throw new Error('刷新后未持久化');
+
+    // ── 6. 集合改名（I20）：✎ → 内联输入 → 回车 → 刷新后仍生效 ──
+    await cdp.evaluate(`(() => {
+      const btn = [...document.querySelectorAll('.library-nav-item')]
+        .find(b => b.querySelector('.library-nav-label')?.textContent === '深度学习');
+      btn.querySelector('.library-nav-rename-btn').click();
+    })()`);
+    await waitUntil(cdp, "document.querySelector('.library-nav-rename')", 6000, '改名输入框');
+    await cdp.evaluate(`(() => {
+      const inp = document.querySelector('.library-nav-rename');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(inp, '视觉模型');
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    })()`);
+    await waitUntil(
+      cdp,
+      "[...document.querySelectorAll('.library-nav-label')].some(e => e.textContent === '视觉模型')",
+      8000,
+      '改名生效'
+    );
+    console.log('[6] 集合改名「深度学习」→「视觉模型」成功');
+
+    await cdp.send('Page.navigate', { url: BASE });
+    await waitUntil(cdp, "document.querySelector('.library-item')", 20000, '刷新后重新渲染');
+    const renamedPersisted = await cdp.evaluate(
+      `[...document.querySelectorAll('.library-nav-label')].some(e => e.textContent === '视觉模型')`
+    );
+    if (!renamedPersisted) throw new Error('刷新后改名丢失');
+    console.log('[6] 刷新后改名仍生效 ✓');
 
     // 切回「全部」拿到完整视图再截图
     await cdp.evaluate(`(() => {
