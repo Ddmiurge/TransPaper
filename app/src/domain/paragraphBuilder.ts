@@ -8,7 +8,9 @@ import type { Block, TextItem, TextLine, TextSpan } from '../types';
  *
  * 与 ../docs/02-domain-model.md §5 的算法对齐，但 I0 只实现一部分：
  *   ✅ 行聚合、按间隙切段、字号变化切段、连字符还原
- *   ❌ 跨页续接、多 Block 聚合成一个 Segment、可疑段落标注（均属 I1）
+ *   ❌ 跨页续接（I25 已在 crossPage.ts 以合并翻译单元的方式实现）、可疑段落标注
+ *   （docs/02 设计的「多 Block 聚合为 Segment」从未落地，Segment 层已随
+ *    CODE_AUDIT D1 移除——翻译单元就是 Block）
  *
  * 参数值为 I0 的初始猜测，I1 阶段用黄金数据集标定。函数签名与参数名不要改。
  */

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-import { isDesktop, logLine, describeError } from '../infra/desktopLog';
+import { describeError, getTauriInvoke, isDesktop, logLine } from '../infra/desktopLog';
 
 /**
  * 翻译设置。
@@ -194,15 +194,8 @@ class SettingsStore {
   }
 }
 
-function getInvoke(): ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null {
-  const g = globalThis as unknown as {
-    __TAURI_INTERNALS__?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-  };
-  return g.__TAURI_INTERNALS__?.invoke ?? null;
-}
-
 async function writeKeychainKey(apiKey: string): Promise<void> {
-  const invoke = getInvoke();
+  const invoke = getTauriInvoke();
   if (!invoke) return;
   try {
     if (apiKey) {
@@ -224,7 +217,7 @@ async function writeKeychainKey(apiKey: string): Promise<void> {
  */
 export async function hydrateApiKey(): Promise<void> {
   if (!isDesktop()) return;
-  const invoke = getInvoke();
+  const invoke = getTauriInvoke();
   if (!invoke) return;
   try {
     const value = await invoke('secret_get', { key: KEYCHAIN_KEY });

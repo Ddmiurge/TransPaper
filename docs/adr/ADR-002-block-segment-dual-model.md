@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted（2026-09-20）
+Accepted（2026-09-20）· **部分偏离（2026-09-28）**：N:1 聚合从未落地，
+`Segment` 层已移除——翻译单元就是 `Block`（见 CODE_AUDIT D1）。
+本 ADR 的其余内容（Block 结构、单向外键、分块存储）仍然成立。
 
 ## Context
 

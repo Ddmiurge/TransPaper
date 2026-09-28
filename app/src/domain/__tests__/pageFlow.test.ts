@@ -45,7 +45,6 @@ function makeAnalysis(blocks: Block[], boundaries: number[]): PageAnalysis {
     items: [],
     lines: [],
     blocks,
-    segments: [],
     columnBoundaries: boundaries,
     columnSplits: boundaries.slice(1, -1),
     bodyFontSize: 12,

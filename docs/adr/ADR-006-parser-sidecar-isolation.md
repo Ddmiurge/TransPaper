@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted（2026-09-20）
+Accepted（2026-09-20）· **实现偏离**：实际采用同进程 pdf.js（`app/src/pdf/pdfjsAdapter.ts`），
+未引入 sidecar 子进程。偏离理由见 ADR-008/ADR-016 的演进——重排路线下
+pdf.js 直读文本层已够用，sidecar（版面分析 / OCR）推迟到出现真实需求时再评估。
 
 ## Context
 

@@ -12,7 +12,7 @@ import { markFrontMatter } from './frontMatter';
 import { detectTableRegions } from './tables';
 import { coverageRatio, mergeOverlapping, unionBBox } from './bbox';
 import { analyzeTextStyle, refineBodyFontSize, type TextStyleOptions } from './textStyle';
-import type { BBox, Block, PageAnalysis, Segment, TextItem, TextLine } from '../types';
+import type { BBox, Block, PageAnalysis, TextItem, TextLine } from '../types';
 
 export interface AnalyzeOptions {
   column?: Partial<ColumnDetectOptions>;
@@ -225,23 +225,12 @@ export function analyzePage(input: AnalyzeInput): PageAnalysis {
 
   // ── 区域内正文块重标记 + 正文字号二次修正 ──
   //
-  // 顺序很关键：必须在 figureRegions 算完之后、segments 构建之前。
+  // 顺序很关键：必须在 figureRegions 算完之后、返回之前。
   // 图表标签字号 ≥ 正文的页面（附录大图、绕排图）上，字号判据反向失效，
   // 只有「块整体落在图形区域内」这个几何信号才可靠（见 remark 的注释）；
   // 而标签被移出正文流之后，正文字号的众数才有机会算对（见 refine 的注释）。
   remarkBodyBlocksInsideRegions(blocks, figureRegions, style.bodyBlockIds);
   refineBodyFontSize(blocks, style);
-
-const segments: Segment[] = blocks.map((block) => ({
-    id: `seg-${block.id}`,
-    pageIndex: block.pageIndex,
-    columnIndex: block.columnIndex,
-    readOrder: block.readOrder,
-    blockIds: [block.id],
-    bbox: block.bbox,
-    text: block.text,
-    translation: null,
-  }));
 
   // 内容边界：所有块的并集。它是重排后行宽（measure）的基准 ——
   // 双栏合一之后内容宽变成整幅版心，必须靠它把行宽约束回可读区间
@@ -254,7 +243,6 @@ const segments: Segment[] = blocks.map((block) => ({
     items,
     lines,
     blocks,
-    segments,
     columnBoundaries: layout.boundaries,
     columnSplits,
     bodyFontSize: style.bodyFontSize,

@@ -198,21 +198,6 @@ export interface Block {
   figureReason: FigureReason;
 }
 
-/**
- * 翻译单元。
- * I0 中与 Block 一一对应；docs/02 设计的 N:1 聚合留到 I1。
- */
-export interface Segment {
-  id: string;
-  pageIndex: number;
-  columnIndex: number;
-  readOrder: number;
-  blockIds: string[];
-  bbox: BBox;
-  text: string;
-  translation: string | null;
-}
-
 /** 一页解析完成后的全部产物 */
 export interface PageAnalysis {
   pageIndex: number;
@@ -221,7 +206,6 @@ export interface PageAnalysis {
   items: TextItem[];
   lines: TextLine[];
   blocks: Block[];
-  segments: Segment[];
   /** 栏边界，长度 = 栏数 + 1，从 0 到 width */
   columnBoundaries: number[];
   /** 检测到的栏缝中心 x */

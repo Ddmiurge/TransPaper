@@ -9,7 +9,7 @@
  * 选择依据只有一个：是否运行在 Tauri 的 WebView 里（见 isDesktop）。
  */
 
-import { isDesktop } from './desktopLog';
+import { getTauriInvoke, isDesktop } from './desktopLog';
 import type { TranslationError } from '../domain/translation';
 
 /** 一次 LLM HTTP 调用的原始结果（领域层据此做错误分类） */
@@ -72,10 +72,7 @@ export const fetchTransport: LlmTransport = async (
 };
 
 function getInvoke(): (cmd: string, args?: Record<string, unknown>) => Promise<unknown> {
-  const g = globalThis as unknown as {
-    __TAURI_INTERNALS__?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-  };
-  const invoke = g.__TAURI_INTERNALS__?.invoke;
+  const invoke = getTauriInvoke();
   if (!invoke) throw new Error('Tauri invoke 不可用');
   return invoke;
 }

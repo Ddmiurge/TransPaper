@@ -13,20 +13,33 @@ type TauriInternals = {
   invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
 };
 
+/**
+ * 取 Tauri 的 invoke 函数；非桌面环境返回 null。
+ *
+ * ── 为什么集中在这里（CODE_AUDIT N1）──
+ * `__TAURI_INTERNALS__` 的结构断言此前在 llmTransport / sqliteDb /
+ * translationSettings 各写一份——内部结构被写三遍，任何字段变动都要同步
+ * 三处，漏改就是「桌面某功能静默失效」。isDesktop 与日志通道同样依赖它，
+ * 取值器因此收敛到这里，全项目仅此一份类型断言。
+ */
+export function getTauriInvoke():
+  | ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>)
+  | null {
+  const g = globalThis as unknown as { __TAURI_INTERNALS__?: TauriInternals };
+  return g.__TAURI_INTERNALS__?.invoke ?? null;
+}
+
 /** 是否运行在 Tauri 的 WebView 里 —— 判断依据只有这一个，别猜 userAgent */
 export function isDesktop(): boolean {
-  const g = globalThis as unknown as { __TAURI_INTERNALS__?: TauriInternals };
-  return typeof g.__TAURI_INTERNALS__?.invoke === 'function';
+  return getTauriInvoke() !== null;
 }
 
 export function logLine(message: string): void {
-  if (!isDesktop()) {
+  const invoke = getTauriInvoke();
+  if (!invoke) {
     console.log(`[diag] ${message}`);
     return;
   }
-  const g = globalThis as unknown as { __TAURI_INTERNALS__: TauriInternals };
-  const invoke = g.__TAURI_INTERNALS__.invoke;
-  if (!invoke) return;
   // 日志是「尽力而为」：写失败不能反过来影响业务，所以吞掉异常
   void invoke('append_log', { line: message }).catch(() => {});
 }

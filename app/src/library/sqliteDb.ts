@@ -1,5 +1,6 @@
 import type { LibraryDb } from './db';
 import { IdbLibraryDb } from './db';
+import { getTauriInvoke } from '../infra/desktopLog';
 import { normalizeMeta, type Collection, type PaperMeta } from './types';
 
 /**
@@ -19,14 +20,11 @@ import { normalizeMeta, type Collection, type PaperMeta } from './types';
  * libraryStore 的惰性创建路径上 new（Node 测试不会碰这个类）。
  */
 
-const KEYCHAIN_KEY: never = undefined as never; // 占位防误导出，见下方 KEYCHAIN 无关
-void KEYCHAIN_KEY;
-
+/**
+ * 本类只用 db_* 系列命令；钥匙串（secret_*）走 translationSettings，与本类无关。
+ */
 function getInvoke(): (cmd: string, args?: Record<string, unknown>) => Promise<unknown> {
-  const g = globalThis as unknown as {
-    __TAURI_INTERNALS__?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-  };
-  const invoke = g.__TAURI_INTERNALS__?.invoke;
+  const invoke = getTauriInvoke();
   if (!invoke) throw new Error('Tauri invoke 不可用 —— TauriLibraryDb 只能在桌面环境使用');
   return invoke;
 }
