@@ -1,13 +1,16 @@
 :root {
-  --bg: #0f1113;
-  --panel: #17191c;
-  --border: #2a2e33;
-  --text: #e6e8ea;
-  --muted: #9aa1a8;
-  --accent: #2dd4bf;
-  --warn: #fbbf24;
-  --bad: #f87171;
-  --ok: #34d399;
+  /* 浅色现代风（2026-09 重设计）：白为主、近黑为辅、丰富的中性灰层次。
+     强调色即黑色 —— 唯一的彩色留给译文（墨绿），中英对照需要一眼区分。 */
+  --bg: #f5f5f4; /* 工作区背景：暖灰白，衬托纸面 */
+  --panel: #ffffff; /* 顶栏 / 侧栏 / 浮层 */
+  --border: #e7e5e4; /* 细分隔线 */
+  --text: #1c1917; /* 近黑主文字 */
+  --muted: #a8a29e; /* 次要文字 */
+  --accent: #1c1917; /* 强调 = 近黑：主按钮、选中态 */
+  --accent-soft: #efeeec; /* 强调的浅灰底（选中态背景） */
+  --warn: #b45309;
+  --bad: #b3261e;
+  --ok: #0f6e56;
 }
 
 * {
@@ -26,6 +29,7 @@ body {
   color: var(--text);
   font-family: system-ui, -apple-system, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 13px;
+  -webkit-font-smoothing: antialiased;
 }
 
 .app {
@@ -52,28 +56,30 @@ body {
 }
 
 .toolbar button {
-  padding: 4px 10px;
-  background: #22262b;
+  padding: 5px 12px;
+  background: transparent;
   color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
   cursor: pointer;
   font-size: 12px;
+  transition: background 0.12s ease;
 }
 
 .toolbar button:hover:not(:disabled) {
-  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .toolbar button:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
 .toolbar button.active {
-  background: #14413c;
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--text);
+  font-weight: 500;
 }
 
 .toolbar label {
@@ -97,7 +103,7 @@ body {
   display: flex;
   gap: 12px;
   padding: 8px 14px;
-  background: #121417;
+  background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
 
@@ -141,15 +147,18 @@ body {
 .viewport {
   flex: 1;
   overflow: auto;
-  padding: 20px;
-  background: #0a0c0e;
+  padding: 24px 20px 48px;
+  background: var(--bg);
 }
 
 .paper {
   margin: 0 auto;
   width: fit-content;
   background: #fff;
-  box-shadow: 0 0 0 1px var(--border);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(28, 25, 23, 0.05);
 }
 
 /* ── 文档流视图：单栏中英对照 ──
@@ -166,10 +175,11 @@ body {
  */
 
 :root {
-  /* 纸张与油墨：略暖的白，避免纯白的刺眼 */
-  --read-paper: #fdfdfb;
-  --read-ink: #15181d; /* 原文 */
-  --read-trans: #31536e; /* 译文：沉稳的蓝灰，明确但不喧宾夺主 */
+  /* 纸张与油墨：纸面纯白，译文用墨绿 —— 白纸黑字的阅读世界里唯一的一抹彩色，
+     承担「一眼分辨中英」的职责（2026-09 重设计，原为深色主题下的蓝灰） */
+  --read-paper: #ffffff;
+  --read-ink: #1c1917; /* 原文 */
+  --read-trans: #0f6e56; /* 译文：墨绿，沉稳但不喧宾夺主 */
 }
 
 .paper-flow {
@@ -256,10 +266,6 @@ body {
   color: var(--muted);
 }
 
-.pdf-canvas {
-  display: block;
-}
-
 .loading,
 .error {
   padding: 20px;
@@ -268,69 +274,6 @@ body {
 
 .error {
   color: var(--bad);
-}
-
-/* ── 覆盖层 ── */
-.layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-/* 调试层：文本项框 */
-.item-box {
-  position: absolute;
-  border: 0.5px solid rgba(56, 189, 248, 0.75);
-  background: rgba(56, 189, 248, 0.08);
-}
-
-/* 调试层：段落框 */
-.block-box {
-  position: absolute;
-  border: 1px dashed;
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.block-label {
-  position: absolute;
-  top: -1px;
-  left: -1px;
-  padding: 0 3px;
-  font-size: 9px;
-  line-height: 12px;
-  color: #000;
-  border-radius: 2px 0 3px 0;
-}
-
-/* 调试层：栏缝 */
-.gutter-line {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 0;
-  border-left: 1px dashed rgba(248, 113, 113, 0.9);
-}
-
-/* 对照层：译文 */
-.parallel-layer {
-  pointer-events: none;
-}
-
-.translation {
-  position: absolute;
-  padding: 2px 5px;
-  background: rgba(45, 212, 191, 0.16);
-  border-left: 2px solid rgba(45, 212, 191, 0.85);
-  color: #0b3b36;
-  line-height: 1.45;
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.translation.collapsed {
-  max-height: 1.45em;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 /* ── 瀑布流：多页依次排列，向下滚动连续阅读 ── */
@@ -343,7 +286,7 @@ body {
    这是纸面文档里「页」的概念在连续滚动下的最小必要提示 ——
    没有它，读者会分不清自己在第几页。 */
 .flow-page + .flow-page {
-  border-top: 1px dashed #d7dbe2;
+  border-top: 1px dashed var(--border);
   margin-top: 34px;
   padding-top: 6px;
 }
@@ -351,14 +294,14 @@ body {
 .flow-page-label {
   font-size: 11px;
   letter-spacing: 0.08em;
-  color: #98a2b3;
+  color: var(--muted);
   text-align: center;
   padding: 8px 0 2px;
   user-select: none;
 }
 
 .flow-page-placeholder {
-  color: #98a2b3;
+  color: var(--muted);
   font-size: 13px;
   text-align: center;
   padding: 56px 0;
@@ -392,8 +335,12 @@ body {
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #06231f;
-  font-weight: 600;
+  color: #ffffff;
+  font-weight: 500;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #3f3a36;
 }
 
 button.primary:disabled {
@@ -460,11 +407,12 @@ button.primary:disabled {
   flex-basis: 100%;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px;
+  border-radius: 10px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 9px;
+  box-shadow: 0 4px 16px rgba(28, 25, 23, 0.06);
 }
 
 .settings-row {
@@ -483,13 +431,19 @@ button.primary:disabled {
 .settings-row input[type='password'],
 .settings-row input[type='number'],
 .settings-row select {
-  background: var(--bg);
+  background: #fafaf9;
   border: 1px solid var(--border);
   color: var(--text);
-  border-radius: 4px;
-  padding: 4px 7px;
+  border-radius: 7px;
+  padding: 5px 8px;
   font-size: 12px;
   font-family: inherit;
+  outline: none;
+}
+
+.settings-row input:focus,
+.settings-row select:focus {
+  border-color: #a8a29e;
 }
 
 .settings-row input[type='text'],
@@ -519,10 +473,10 @@ button.primary:disabled {
   padding: 8px 10px;
   font-size: 11px;
   line-height: 1.6;
-  color: var(--muted);
-  background: rgba(251, 191, 36, 0.08);
-  border-left: 3px solid var(--warn);
-  border-radius: 0 4px 4px 0;
+  color: #79716b;
+  background: #faf7ef;
+  border-left: 3px solid #d97706;
+  border-radius: 0 6px 6px 0;
 }
 
 .settings-note strong {
@@ -551,7 +505,7 @@ button.primary:disabled {
 
 /* 页码等页眉页脚内容：弱化显示，不参与阅读流 */
 .flow-source.is-untranslated:not(.is-reference) {
-  color: #98a2b3;
+  color: var(--muted);
   font-size: 0.85em;
 }
 
@@ -590,7 +544,7 @@ button.primary:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 17, 19, 0.72);
+  background: rgba(255, 255, 255, 0.82);
   /* 覆盖层不能吃掉 drop 事件，否则永远收不到文件 */
   pointer-events: none;
   border: 3px dashed var(--accent);
@@ -602,7 +556,8 @@ button.primary:disabled {
   color: var(--accent);
   background: var(--panel);
   padding: 16px 30px;
-  border-radius: 8px;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(28, 25, 23, 0.12);
 }
 
 /* 诊断面板默认隐藏（用 hidden 属性）。这里只处理它的间距 */
@@ -654,14 +609,14 @@ button.primary:disabled {
   padding: 5px 9px;
   font-size: 12px;
   color: var(--text);
-  background: #16181b;
+  background: #ffffff;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 7px;
   outline: none;
 }
 
 .library-search:focus {
-  border-color: var(--accent);
+  border-color: #a8a29e;
 }
 
 .library-search::placeholder {
@@ -692,12 +647,12 @@ button.primary:disabled {
 }
 
 .library-item:hover {
-  background: #22262b;
+  background: #f5f5f4;
 }
 
-/* 当前打开的论文：左侧一道强调线比整块底色更轻 */
+/* 当前打开的论文：浅灰底 + 左侧一道黑线，比整块染色更轻 */
 .library-item.is-current {
-  background: #1d222b;
+  background: var(--accent-soft);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
@@ -740,8 +695,8 @@ button.primary:disabled {
 }
 
 .library-item-delete:hover {
-  color: #e5484d;
-  background: #2a2226;
+  color: var(--bad);
+  background: #f5e8e7;
 }
 
 .library-item-confirm {
@@ -780,13 +735,14 @@ button.primary:disabled {
 }
 
 .library-nav-item:hover {
-  background: #22262b;
+  background: #f5f5f4;
   color: var(--text);
 }
 
 .library-nav-item.is-active {
-  background: #1d222b;
+  background: var(--accent-soft);
   color: var(--text);
+  font-weight: 500;
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
@@ -799,8 +755,8 @@ button.primary:disabled {
 
 .library-nav-count {
   font-size: 10.5px;
-  color: var(--muted);
-  background: #16181b;
+  color: #79716b;
+  background: #f0efee;
   border-radius: 9px;
   padding: 0 6px;
   line-height: 16px;
@@ -821,7 +777,7 @@ button.primary:disabled {
 }
 
 .library-nav-del:hover {
-  color: #e5484d;
+  color: var(--bad);
 }
 
 /* ── I14：标签 chips ── */
@@ -834,8 +790,8 @@ button.primary:disabled {
 
 .library-tag {
   font-size: 10.5px;
-  color: var(--accent);
-  background: #16202b;
+  color: #57534e;
+  background: #f0efee;
   border-radius: 9px;
   padding: 1px 7px;
   line-height: 16px;
@@ -865,7 +821,7 @@ button.primary:disabled {
 
 .library-item-menu:hover {
   color: var(--text);
-  background: #2a2f36;
+  background: #eceae8;
 }
 
 /* 分配菜单（归属集合 + 标签） */
@@ -876,10 +832,10 @@ button.primary:disabled {
   z-index: 20;
   width: 196px;
   padding: 8px 10px;
-  background: #1b1f24;
+  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  border-radius: 9px;
+  box-shadow: 0 8px 24px rgba(28, 25, 23, 0.12);
   cursor: default;
 }
 
@@ -924,8 +880,8 @@ button.primary:disabled {
   align-items: center;
   gap: 3px;
   font-size: 10.5px;
-  color: var(--accent);
-  background: #16202b;
+  color: #57534e;
+  background: #f0efee;
   border-radius: 9px;
   padding: 1px 4px 1px 7px;
   line-height: 16px;
@@ -945,7 +901,7 @@ button.primary:disabled {
 }
 
 .library-menu-tag-x:hover {
-  color: #e5484d;
+  color: var(--bad);
 }
 
 .library-menu-tagrow {
@@ -957,14 +913,14 @@ button.primary:disabled {
   padding: 4px 7px;
   font-size: 11.5px;
   color: var(--text);
-  background: #16181b;
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 5px;
   outline: none;
 }
 
 .library-menu-taginput:focus {
-  border-color: var(--accent);
+  border-color: #a8a29e;
 }
 
 /* 新建集合输入 */
@@ -982,14 +938,14 @@ button.primary:disabled {
   padding: 4px 8px;
   font-size: 11.5px;
   color: var(--text);
-  background: #16181b;
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 6px;
   outline: none;
 }
 
 .library-newcoll-input:focus {
-  border-color: var(--accent);
+  border-color: #a8a29e;
 }
 
 .library-newcoll-btn {
@@ -997,10 +953,14 @@ button.primary:disabled {
   padding: 0;
   font-size: 14px;
   color: var(--text);
-  background: #22262b;
+  background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 6px;
   cursor: pointer;
+}
+
+.library-newcoll-btn:hover:not(:disabled) {
+  background: var(--accent-soft);
 }
 
 .library-newcoll-btn:disabled {
@@ -1010,8 +970,9 @@ button.primary:disabled {
 
 /* 工具栏里「论文库」开关的激活态 */
 .toolbar button.is-active {
-  color: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--text);
 }
 
 /* ── I18 手动改判菜单 ── */
@@ -1020,17 +981,17 @@ button.primary:disabled {
   z-index: 1000;
   min-width: 224px;
   padding: 6px;
-  background: #262b31;
-  border: 1px solid #3a4048;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: 0 8px 24px rgba(28, 25, 23, 0.12);
 }
 
 .override-menu-preview {
   padding: 6px 8px;
   font-size: 12px;
-  color: #9aa4ae;
-  border-bottom: 1px solid #3a4048;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
   margin-bottom: 6px;
   word-break: break-all;
   display: -webkit-box;
@@ -1042,7 +1003,7 @@ button.primary:disabled {
 .override-menu-state {
   padding: 2px 8px 6px;
   font-size: 12px;
-  color: #c6cdd4;
+  color: #57534e;
 }
 
 .override-menu button {
@@ -1061,12 +1022,12 @@ button.primary:disabled {
 }
 
 .override-menu button:hover:not(:disabled) {
-  background: #333a42;
+  background: #f5f5f4;
 }
 
 .override-menu button.is-current {
-  background: #2c3a33;
-  outline: 1px solid #3d5a48;
+  background: #eaf3ef;
+  outline: 1px solid #bfd9cf;
 }
 
 .override-menu button:disabled {
@@ -1080,14 +1041,14 @@ button.primary:disabled {
 
 .override-menu-hint {
   font-size: 11px;
-  color: #8b949d;
+  color: var(--muted);
 }
 
 /* ── I20 集合改名 ── */
 .library-nav-rename-btn {
   margin-left: auto;
   font-size: 12px;
-  color: #8b949d;
+  color: var(--muted);
   cursor: pointer;
 }
 
@@ -1101,7 +1062,7 @@ button.primary:disabled {
   padding: 1px 4px;
   font-size: 13px;
   color: var(--text);
-  background: #1b1f24;
-  border: 1px solid #4a5560;
+  background: #ffffff;
+  border: 1px solid var(--border);
   border-radius: 4px;
 }
