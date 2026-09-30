@@ -118,6 +118,46 @@ describe('段落登记', () => {
   });
 });
 
+describe('缓存自动恢复（重开文档译文秒回）', () => {
+  it('翻译过的段落重新注册后自动从缓存回填，不需要 Key、不发请求', async () => {
+    const store = await freshStore();
+    const text = 'a cached paragraph about transformers';
+    store.register([{ id: 'b1', text }]);
+    await store.start();
+    expect(store.getSnapshot().byBlockId.get('b1')).toBeTruthy();
+
+    // 模拟重开：换文档 reset（内存清空）→ 同一段原文以新块 id 重新注册
+    store.reset();
+    expect(store.getSnapshot().byBlockId.size).toBe(0);
+    store.register([{ id: 'b9', text }]);
+    store.restoreFromCache();
+
+    expect(store.getSnapshot().byBlockId.get('b9')).toBeTruthy();
+    // 恢复不是一次翻译运行 —— 状态仍是 idle，没有进度
+    expect(store.getSnapshot().status).toBe('idle');
+    expect(store.getSnapshot().progress.total).toBe(0);
+  });
+
+  it('未缓存的段落恢复时不产生译文，保持原文待译', async () => {
+    const store = await freshStore();
+    store.register([{ id: 'x1', text: 'never translated before' }]);
+    store.restoreFromCache();
+    expect(store.getSnapshot().byBlockId.has('x1')).toBe(false);
+    expect(store.getSnapshot().registered).toBe(1);
+  });
+
+  it('清空译文后不再自动恢复 —— 用户主动清空是要求重译，回填会跟用户对着干', async () => {
+    const store = await freshStore();
+    store.register([{ id: 'b1', text: 'cached once more' }]);
+    await store.start();
+    store.clearTranslations();
+    expect(store.getSnapshot().byBlockId.size).toBe(0);
+
+    store.restoreFromCache();
+    expect(store.getSnapshot().byBlockId.size).toBe(0);
+  });
+});
+
 describe('一键翻译的完整流程', () => {
   it('译文逐段回填，且进度合计等于段落数', async () => {
     const store = await freshStore({ concurrency: 2 });

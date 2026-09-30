@@ -1,6 +1,7 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 
 import {
+  cacheKeyOf,
   DEFAULT_TRANSLATION_CONFIG,
   type TranslationConfig,
 } from '../domain/translation';
@@ -101,6 +102,7 @@ class TranslationStore {
     }
     if (added === 0) return;
     this.patch({ registered: this.sources.size });
+    this.scheduleRestore();
   }
 
   /** 已译/待译的段落数（含未翻译的） */
@@ -111,6 +113,59 @@ class TranslationStore {
   /** 该段落当前登记的原文是否就是这段文本（幂等重登记的守卫用） */
   isRegisteredWith(id: string, text: string): boolean {
     return this.sources.get(id) === text;
+  }
+
+  // ── 缓存自动恢复（重开文档 = 译文秒回）──
+  //
+  // 译文仓库是会话内存态：换文档 reset() 清空，重开同一篇时从头再来 ——
+  // 用户必须再点一次「一键翻译」才能看到译文（虽然全部命中缓存、不花钱，
+  // 但「翻译过的文章打开是裸的」违反阅读软件的基本预期）。
+  //
+  // 做法：段落注册后**静默查一次缓存**，命中直接回填 —— 不发网络请求、
+  // 不要求配置 Key。查过的 id 记入 attempted，不因重渲染反复查。
+  private readonly restoreAttempted = new Set<string>();
+  /** 用户点「清空译文」后置位：那是主动要求重译，自动回填会跟用户对着干 */
+  private suppressRestore = false;
+  private restoreTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private scheduleRestore(): void {
+    if (this.busy || this.suppressRestore) return;
+    // 瀑布流逐页注册，debounce 到注册潮结束后查一次
+    if (this.restoreTimer !== null) clearTimeout(this.restoreTimer);
+    this.restoreTimer = setTimeout(() => {
+      this.restoreTimer = null;
+      this.restoreFromCache();
+    }, 300);
+  }
+
+  /**
+   * 从缓存回填已翻译过的段落（公开：测试与「手动触发恢复」用）。
+   *
+   * 只读缓存，永远不发请求；未命中的段落保持原文，
+   * 由用户点「一键翻译」时按正常调度处理。
+   */
+  restoreFromCache(): void {
+    if (this.busy || this.suppressRestore) return;
+    const settings = loadSettings();
+    const config: TranslationConfig = {
+      ...DEFAULT_TRANSLATION_CONFIG,
+      provider: settings.provider,
+      model: settings.model,
+    };
+    let restored = 0;
+    const byBlockId = new Map(this.snapshot.byBlockId);
+    for (const [id, source] of this.sources) {
+      if (byBlockId.has(id) || this.restoreAttempted.has(id)) continue;
+      this.restoreAttempted.add(id);
+      const cached = this.cache.get(cacheKeyOf(source, config));
+      if (cached !== undefined) {
+        byBlockId.set(id, cached);
+        restored += 1;
+      }
+    }
+    if (restored > 0) {
+      this.patch({ byBlockId, message: `已从缓存恢复 ${restored} 段译文 —— 点「一键翻译」可翻译其余段落` });
+    }
   }
 
   /**
@@ -276,6 +331,12 @@ class TranslationStore {
   reset(): void {
     if (this.busy) return;
     this.sources.clear();
+    this.restoreAttempted.clear();
+    this.suppressRestore = false;
+    if (this.restoreTimer !== null) {
+      clearTimeout(this.restoreTimer);
+      this.restoreTimer = null;
+    }
     this.patch({
       status: 'idle',
       byBlockId: new Map(),
@@ -291,6 +352,10 @@ class TranslationStore {
   /** 清空译文（不影响缓存）—— 用于切换模型后重新翻译 */
   clearTranslations(): void {
     if (this.busy) return;
+    // 用户主动清空 = 要求重译（通常刚换了模型）。此时缓存里的旧译文
+    // 不该被自动恢复灌回来 —— 抑制直到换文档
+    this.suppressRestore = true;
+    this.restoreAttempted.clear();
     this.patch({
       status: 'idle',
       byBlockId: new Map(),
