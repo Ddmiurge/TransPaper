@@ -230,28 +230,66 @@ fn decode_base64(s: &str) -> Result<Vec<u8>, String> {
             _ => Err("非法 base64 字符".to_string()),
         }
     }
+    // 过滤空白；`=` 是标准 base64 填充符（仅出现在末尾），单独处理。
+    // 旧实现把 `=` 当作非法字符直接报错，导致任何前端 btoa 输出（必然带填充）
+    // 在 db_put_file 写入真实 PDF 时一律失败（I25/#bug 导入路径）。
     let bytes: Vec<u8> = s.bytes().filter(|b| !b" \n\r\t".contains(b)).collect();
     let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
-    for chunk in bytes.chunks(4) {
-        if chunk.len() < 2 {
-            return Err("base64 长度不足".to_string());
+    let mut acc: u32 = 0;
+    let mut bits: u32 = 0;
+    let mut seen_pad = false;
+    for &c in &bytes {
+        if c == b'=' {
+            // 填充符一旦开始，后续必须全是 `=`，否则视为非法
+            seen_pad = true;
+            continue;
         }
-        let mut n = value(chunk[0])? << 18 | value(chunk[1])? << 12;
-        if chunk.len() > 2 {
-            n |= value(chunk[2])? << 6;
+        if seen_pad {
+            return Err("非法 base64 字符".to_string());
         }
-        if chunk.len() > 3 {
-            n |= value(chunk[3])?;
-        }
-        out.push((n >> 16) as u8);
-        if chunk.len() > 2 {
-            out.push((n >> 8) as u8);
-        }
-        if chunk.len() > 3 {
-            out.push(n as u8);
+        let v = value(c)?;
+        acc = (acc << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_handles_padding() {
+        // 无填充
+        assert_eq!(decode_base64("QUFB").unwrap(), b"AAA");
+        // 2 个填充（末尾 2 个有效字符）—— 回归：旧实现在此报错
+        assert_eq!(decode_base64("QUFB==").unwrap(), b"AAA");
+        // 1 个填充（末尾 3 个有效字符）
+        assert_eq!(decode_base64("SGVsbG8=").unwrap(), b"Hello");
+        assert_eq!(decode_base64("SGVsbG8gd29ybGQ=").unwrap(), b"Hello world");
+        assert_eq!(decode_base64("SGVsbG8gV29ybGQ=").unwrap(), b"Hello World");
+    }
+
+    #[test]
+    fn decode_rejects_bad_char_and_mid_padding() {
+        assert!(decode_base64("!!!!").is_err());
+        // `=` 之后不得再出现数据字符
+        assert!(decode_base64("QUFB=C").is_err());
+    }
+
+    #[test]
+    fn encode_decode_roundtrip() {
+        // encode 输出带填充，正是前端 btoa 的格式 —— 直接验证真实导入路径
+        for s in ["", "A", "AB", "ABC", "ABCD", "Hello, 世界（字节任意）"] {
+            let data = s.as_bytes();
+            let enc = encode_base64(data);
+            assert_eq!(decode_base64(&enc).unwrap(), data, "roundtrip failed for {s:?}");
+        }
+    }
 }
 
 fn run() {
