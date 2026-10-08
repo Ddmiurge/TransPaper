@@ -49,12 +49,14 @@ export const DEFAULT_SETTINGS: TranslationSettings = {
   apiKey: '',
   model: 'deepseek-chat',
   /**
-   * 并发 4。
+   * 并发 8。
    *
-   * 取这个值的理由：DeepSeek 对并发不算敏感，但设太高会在长文档上触发 429，
-   * 而 429 重试带来的退避等待反而更慢。4 段并发已经能让 100 段在一两分钟内完成。
+   * 取这个值的理由：DeepSeek/MiMo 这类服务对并发不算敏感，设太低时长文档
+   * 要轮很多轮 —— 实测 MiMo 偏慢，8 路并发能让 100 段在几十秒内完成。
+   * 设太高会在长文档上触发 429，而 429 重试的退避等待反而更慢，所以 UI 与
+   * 校验上限放到 32，供用户在设置里按自己服务的限流自试。
    */
-  concurrency: 4,
+  concurrency: 8,
   maxAttempts: 3,
   /** 退避基数 800ms：429 通常几百毫秒就恢复，不必等太久 */
   baseDelayMs: 800,
@@ -163,7 +165,7 @@ class SettingsStore {
         // 桌面永远为空 —— 等 hydrateApiKey() 从钥匙串取回
         apiKey: isDesktop() ? '' : str(parsed.apiKey, base.apiKey),
         model: str(parsed.model, base.model),
-        concurrency: clampInt(parsed.concurrency, 1, 16, base.concurrency),
+        concurrency: clampInt(parsed.concurrency, 1, 32, base.concurrency),
         maxAttempts: clampInt(parsed.maxAttempts, 1, 8, base.maxAttempts),
         baseDelayMs: clampInt(parsed.baseDelayMs, 100, 30_000, base.baseDelayMs),
         previewMode: typeof parsed.previewMode === 'boolean' ? parsed.previewMode : base.previewMode,

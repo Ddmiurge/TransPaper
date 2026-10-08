@@ -192,7 +192,7 @@ function SettingsPanel() {
         <input
           type="number"
           min={1}
-          max={16}
+          max={32}
           value={settings.concurrency}
           onChange={(e) => updateTranslationSettings({ concurrency: Number(e.target.value) })}
         />
