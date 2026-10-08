@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 
 import fixtureUrl from '../fixtures/two-column-sample.pdf?url';
 import { LibrarySidebar } from './components/LibrarySidebar';
@@ -22,6 +22,9 @@ import { extractPageItems, loadPdf, probePdfEnvironment } from './pdf/pdfjsAdapt
 import type { PageAnalysis } from './types';
 
 const BASE_SCALE = 1.5;
+/** 连续缩放的范围（相对 PDF 渲染基准的倍率） */
+const MIN_ZOOM = 0.4;
+const MAX_ZOOM = 3;
 
 /**
  * 从 PDF 提取论文标题，用于论文库侧边栏显示。
@@ -170,6 +173,13 @@ export default function App() {
    */
   const [docReadingWidth, setDocReadingWidth] = useState(0);
   const [scale, setScale] = useState(BASE_SCALE);
+  // ── 连续缩放（I26）：scale = 渲染分辨率（昂贵，切换会重渲染离屏画布）；
+  //    viewScale = 用户期望缩放，用 CSS zoom 实时预览、零成本，松手后再提交 scale ──
+  const [viewScale, setViewScale] = useState(BASE_SCALE);
+  const viewScaleRef = useRef(BASE_SCALE);
+  viewScaleRef.current = viewScale;
+  const viewportRef = useRef<HTMLElement | null>(null);
+  const zoomCommitTimer = useRef<number | null>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState('');
 
@@ -211,6 +221,60 @@ export default function App() {
   );
 
   const handleMeasured = useCallback((m: FlowMeasurement) => setFlowMeasure(m), []);
+
+  const clampZoom = (v: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v));
+
+  /**
+   * 提交一个缩放值：先实时更新 viewScale（CSS zoom 立即预览，零成本），
+   * 防抖 160ms 后再把它落实为渲染分辨率 scale（重渲染离屏画布，保证清晰）。
+   * 落定时只重渲染当前页起，避免已解析的每页同时重渲染（见原缩放注释）。
+   */
+  const commitScale = useCallback(
+    (next: number) => {
+      const v = clampZoom(next);
+      setViewScale(v);
+      if (zoomCommitTimer.current !== null) window.clearTimeout(zoomCommitTimer.current);
+      zoomCommitTimer.current = window.setTimeout(() => {
+        zoomCommitTimer.current = null;
+        setScale(v);
+        setReadyUpTo(Math.max(0, pageNumber - 1));
+      }, 160);
+    },
+    [pageNumber]
+  );
+
+  // 触控板双指捏合 / Ctrl(Cmd)+滚轮 = 缩放；普通滚轮留给页面滚动（非 passive 才能阻止默认缩放）
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const factor = Math.exp(-e.deltaY * 0.0015); // 乘法式、平滑跟随手势
+      commitScale(viewScaleRef.current * factor);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [commitScale]);
+
+  // Ctrl/Cmd + '+' / '-' / '0' 快捷键缩放
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        commitScale(viewScaleRef.current + 0.1);
+      } else if (e.key === '-') {
+        e.preventDefault();
+        commitScale(viewScaleRef.current - 0.1);
+      } else if (e.key === '0') {
+        e.preventDefault();
+        commitScale(BASE_SCALE);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [commitScale]);
 
   /** 打开本地 PDF */
   const openFile = useCallback(async (file: File) => {
@@ -548,22 +612,30 @@ export default function App() {
           </button>
         </div>
 
-        <div className="group">
-          {[1.0, 1.5, 2.0].map((s) => (
-            <button
-              key={s}
-              type="button"
-              className={Math.abs(scale - s) < 0.001 ? 'active' : ''}
-              onClick={() => {
-                setScale(s);
-                // 只放开到当前页。若不收回，已解析的每一页都会同时重渲染 ——
-                // 十几页并发的离屏画布 + 切片画布，内存开销很可观。
-                setReadyUpTo(Math.max(0, pageNumber - 1));
-              }}
-            >
-              {Math.round(s * 100)}%
-            </button>
-          ))}
+        <div className="group zoom-control">
+          <button type="button" onClick={() => commitScale(viewScale - 0.1)} title="缩小 (Ctrl/Cmd −)">
+            −
+          </button>
+          <input
+            type="range"
+            min={MIN_ZOOM}
+            max={MAX_ZOOM}
+            step={0.1}
+            value={viewScale}
+            onChange={(e) => commitScale(Number(e.target.value))}
+            aria-label="缩放比例"
+          />
+          <button
+            type="button"
+            className="zoom-label"
+            onClick={() => commitScale(BASE_SCALE)}
+            title="点击恢复默认 150%"
+          >
+            {Math.round(viewScale * 100)}%
+          </button>
+          <button type="button" onClick={() => commitScale(viewScale + 0.1)} title="放大 (Ctrl/Cmd +)">
+            +
+          </button>
         </div>
 
         {/* 翻译是整篇文档的动作，不是每页独立的事 —— 所以工具栏放在瀑布流外层 */}
@@ -656,12 +728,15 @@ export default function App() {
         <LibrarySidebar currentId={currentPaperId} onOpen={openFromLibrary} onDelete={removeFromLibrary} />
       )}
 
-      <main className="viewport">
+      <main className="viewport" ref={viewportRef}>
         {status === 'error' && <div className="error">加载失败：{error}</div>}
         {status === 'loading' && <div className="loading">正在加载 PDF…</div>}
 
         {doc && numPages > 0 && (
-          <div className="paper paper-flow">
+          <div
+            className="paper paper-flow"
+            style={viewScale !== scale ? ({ zoom: viewScale / scale } as CSSProperties) : undefined}
+          >
             {/* 瀑布流：全部页面依次排列，向下滚动即可连续阅读，
                 不必再一页页点「下一页」。每页只在自己的 enabled 为真时才开始解析。 */}
             {Array.from({ length: numPages }, (_, i) => i + 1).map((n) => (

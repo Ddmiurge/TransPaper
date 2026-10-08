@@ -75,6 +75,31 @@ describe('桌面环境（Tauri WebView）', () => {
     expect(loadSettings().baseUrl).toBe('https://api.deepseek.com');
   });
 
+  it('选中 MiMo 后保留其接口地址，重启不再被覆盖成 DeepSeek（I26 回归）', async () => {
+    installStubs({ tauri: true });
+    // 用户在桌面端选了 MiMo、并手动填过接口地址（这里用预设 origin）
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ provider: 'mimo', model: 'mimo-v2.6-pro', baseUrl: 'https://api.xiaomimimo.com/v1' })
+    );
+
+    const { loadSettings } = await importModule();
+    expect(loadSettings().provider).toBe('mimo');
+    expect(loadSettings().baseUrl).toBe('https://api.xiaomimimo.com/v1');
+    expect(loadSettings().model).toBe('mimo-v2.6-pro');
+  });
+
+  it('桌面端残留 /api/llm 时按所选预设纠正（MiMo → MiMo 地址，而非 DeepSeek）', async () => {
+    installStubs({ tauri: true });
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ provider: 'mimo', model: 'mimo-v2.6-pro', baseUrl: '/api/llm' })
+    );
+
+    const { loadSettings } = await importModule();
+    expect(loadSettings().baseUrl).toBe('https://api.xiaomimimo.com/v1');
+  });
+
   it('Key 走钥匙串（防抖取最后一次），localStorage 里不含 Key', async () => {
     const h = installStubs({ tauri: true });
     const { updateTranslationSettings, loadSettings } = await importModule();

@@ -82,6 +82,20 @@ body {
   font-weight: 500;
 }
 
+/* 连续缩放控件：− / 滑块 / 百分比 / ＋ */
+.zoom-control input[type='range'] {
+  width: 120px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.zoom-control .zoom-label {
+  min-width: 48px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
 .toolbar label {
   display: flex;
   align-items: center;

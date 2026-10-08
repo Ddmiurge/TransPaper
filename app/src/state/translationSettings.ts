@@ -171,8 +171,18 @@ class SettingsStore {
         previewMode: typeof parsed.previewMode === 'boolean' ? parsed.previewMode : base.previewMode,
       };
       if (isDesktop()) {
-        // localStorage 里旧版存过 /api/llm —— 桌面上这个地址必然 404，强制纠正
-        loaded.baseUrl = DESKTOP_OVERRIDES.baseUrl ?? loaded.baseUrl;
+        // 桌面直发请求，浏览器代理写法 /api/llm 必然 404：按「当前所选预设服务」
+        // 纠正成完整地址。已手动改过的其它地址（如 MiMo 的 Token Plan 变体）一律保留，
+        // 不再一律覆盖成 DeepSeek —— 否则选中 MiMo 却每次启动都被打回 DeepSeek（I26 修复）。
+        if (loaded.baseUrl.startsWith('/api/llm')) {
+          const preset = PROVIDER_PRESETS.find((p) => p.id === loaded.provider);
+          loaded.baseUrl = preset?.origin ?? DESKTOP_OVERRIDES.baseUrl ?? loaded.baseUrl;
+        }
+        // 模型残留 DeepSeek 默认而服务不是 DeepSeek：同样按预设纠正，保持配置自洽
+        if (loaded.provider !== 'deepseek' && loaded.model === DEFAULT_SETTINGS.model) {
+          const preset = PROVIDER_PRESETS.find((p) => p.id === loaded.provider);
+          if (preset) loaded.model = preset.model;
+        }
       }
       return loaded;
     } catch {
