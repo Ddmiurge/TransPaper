@@ -226,6 +226,15 @@ export interface PageFlowOptions {
   figureRegions?: BBox[];
 
   /**
+   * 本页文字表格区域（`detectTableRegions` 的输出）。
+   *
+   * 存在的唯一目的：让**同时**被矢量线框聚类识别成图形区域的表格只算一份。
+   * 表格已经进了 `figurePaths`，若图形区域再作为独立障碍加入，
+   * 两个纵向范围不同的障碍会生成两块重叠切片（I28 修复）。
+   */
+  tableRegions?: BBox[];
+
+  /**
    * 小于此高度的片段直接丢弃（px）。
    *
    * 默认值曾只有 3px，于是「空隙里检测到一条细线」也会生成一个切片 ——
@@ -328,6 +337,19 @@ export function buildPageFlow(
   const absorbedByFigure = (block: Block): boolean =>
     !block.isBodyText && figureCoverage(block.bbox) > 0.3;
 
+  /** 落在某个表格区域内的块 —— 由表格切片统一承载，不该再单独成为障碍（I28）。
+   *
+   *  判据用**中心点**而不是面积占比：表格内部的块（`Against SOTA Defenses` 等）
+   *  往往横跨整栏、比表格区域还宽，按面积算占比会掉到 0.5 以下而漏网
+   *  （实测 Eyes-on-Me p8 右栏四块）。中心点判定稳定且更符合语义。
+   */
+  const insideTable = (bbox: BBox): boolean =>
+    (options.tableRegions ?? []).some((t) => {
+      const cx = bbox.x + bbox.width / 2;
+      const cy = bbox.y + bbox.height / 2;
+      return cx >= t.x && cx <= t.x + t.width && cy >= t.y && cy <= t.y + t.height;
+    });
+
   const obstacles: Array<{
     bbox: BBox;
     isBodyText: boolean;
@@ -361,6 +383,7 @@ export function buildPageFlow(
   }> = [
     ...blocks
       .filter((block) => !absorbedByFigure(block))
+      .filter((block) => !insideTable(block.bbox))
       .map((block) => {
         // 公式块的包围盒要**向下/上扩一点**：文本项的 bbox 只到基线附近，
         // 而公式的字形经常超出 —— 求和/积分的上下限、分式的横线。
@@ -382,19 +405,56 @@ export function buildPageFlow(
           block,
           covered,
           home: covered[0] ?? 0,
-          isSpanningFigure: false,
+          // 跨栏表格（如 NeurIPS 双栏里的全宽表）必须按**跨栏图形**处理（I28）。
+          //
+          // 不标的话 `covered` 会是 [0,1]，下面按 `covered.includes(columnIndex)`
+          // 筛选时它在**每一栏都入选** → 每栏各切一次 → 页面上同一张表出现
+          // 两块图像（实测 Eyes-on-Me p8：w=438 与 w=480 两片，左右各一），
+          // 而且每片都被裁到本栏宽度，表格被从中间劈开。
+          //
+          // 它与跨栏图形是同一类东西：像素归一次裁切，非归属栏不留 skip 区间。
+          isSpanningFigure:
+            covered.length >= 2 && insideTable(bbox),
           isFigureRegion: false,
         };
       })
       .filter((m) => m.covered.length > 0),
+    // 表格区域自身作为独立障碍（I28）。
+    //
+    // 表格块在 pipeline 里被置为 `isBodyText=false`，于是被 `absorbedByFigure`
+    // 滤掉、不再是障碍 —— 但表格**仍然需要切片**（R3「表格保持原样不翻译」）。
+    // 之前它靠「同带内的矢量线框」间接成为障碍，而线框带（y 83..290）往往比
+    // 表格区域（y 125..254）大得多，切片范围由它决定，于是把表格上下的正文
+    // 一起切了进来；而且它是按栏参与排布的，跨栏表被从中间劈成两片。
+    //
+    // 这里把表格区域直接作为**跨栏图形**加入：像素由归属栏那一次裁切，
+    // 裁切范围取表格自身全宽（不再由外扩的线框带撑大），非归属栏不留 skip。
+    ...(options.tableRegions ?? []).map((t) => ({
+      bbox: t,
+      isBodyText: false,
+      block: undefined,
+      covered: coveredColumnIndexes(t, columnBoundaries),
+      home: coveredColumnIndexes(t, columnBoundaries)[0] ?? 0,
+      isSpanningFigure: true,
+      isFigureRegion: false,
+    })),
     ...(options.figureRegions ?? [])
       .filter((bbox) => {
+        // 已被表格区域覆盖的图形区域不再作为独立障碍（I28）。
+        // 判据与 insideTable 一致用中心点：表格的线框聚类区域往往比表格区域
+        // 略大（要包住框线），按面积算占比会正好卡在 0.5 上下而漏网。
+        const inTable = (options.tableRegions ?? []).some((t) => {
+          const cx = bbox.x + bbox.width / 2;
+          const cy = bbox.y + bbox.height / 2;
+          return cx >= t.x && cx <= t.x + t.width && cy >= t.y && cy <= t.y + t.height;
+        });
+        if (inTable) return false;
         // 跨栏判定在域层做：同时覆盖 ≥2 栏才算跨栏。
         // 附加条件：**与正文块纵向重叠**的区域也必须成为障碍（绕排图，见
         // isFigureRegion 的注释）—— 否则它的 y 范围被正文块盖住，
         // 空隙裁切永远不会发生，整张图丢失。
-        const covered = coveredColumnIndexes(bbox, columnBoundaries);
-        if (covered.length >= 2) return true;
+        const coveredColumns = coveredColumnIndexes(bbox, columnBoundaries);
+        if (coveredColumns.length >= 2) return true;
         const regionArea = bbox.width * bbox.height;
         if (regionArea <= 0) return false;
         return (
@@ -513,8 +573,18 @@ export function buildPageFlow(
     //     图会被切开，被图注「挖走」的那一段既不在切片里、也没被渲染成文字）
     //
     // 这是最隐蔽的一类缺陷：漏的不是文字，是图的像素，光看文字输出永远发现不了。
+    // 表格已由上面那个「跨栏图形」障碍切出精确范围；它自己的矢量线框
+    // （实测 Eyes-on-Me p8 右栏那条 y 83..290 的框带）不能再参与撑大裁切范围，
+    // 否则表格上下 36px 的正文会被一起切进来（I28）。同样用中心点判据。
+    const tableCovered = (path: BBox): boolean => {
+      const cx = path.x + path.width / 2;
+      const cy = path.y + path.height / 2;
+      return (options.tableRegions ?? []).some(
+        (t) => cx >= t.x && cx <= t.x + t.width && cy >= t.y && cy <= t.y + t.height
+      );
+    };
     const columnFigures = (options.figurePaths ?? []).filter(
-      (path) => path.x + path.width > left && path.x < right
+      (path) => path.x + path.width > left && path.x < right && !tableCovered(path)
     );
     const top = Math.min(
       ...columnMeta.map((m) => m.bbox.y),
@@ -574,9 +644,13 @@ export function buildPageFlow(
      */
     const figurePaths = options.figurePaths ?? [];
     const hasFigureInfo = options.figurePaths !== undefined;
+    // 空隙判据同样要排除表格自身的框线（h=0 的表格线中心点落在表格区域内，
+    // 见上方 tableCovered 的注释）。否则表格上下的空隙被这些线判为「含图形」，
+    // 从 y=83 一路切到 y=290（实测 Eyes-on-Me p8 右栏）。
+    const gapFigures = figurePaths.filter((p) => !tableCovered(p));
     const gapHasFigure = (y0: number, y1: number) =>
       !hasFigureInfo ||
-      figurePaths.some(
+      gapFigures.some(
         (p) => p.y + p.height > y0 + 0.5 && p.y < y1 - 0.5 && p.x + p.width > left && p.x < right
       );
 

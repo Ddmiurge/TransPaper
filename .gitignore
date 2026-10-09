@@ -19,3 +19,8 @@ CODE_AUDIT.md
 
 # 构建/诊断产物（截图与诊断输出，非源码，约 22 个文件 ~10MB）
 app/artifacts/
+
+# 私人论文样本（体积大且属用户隐私，不入库；
+# 表格跨栏回归测试 tablesEyes.real.test.ts 需要它，
+# 从论文库 paper-files/{id}.pdf 拷入 app/fixtures/ 即可复现）
+app/fixtures/eyes-on-me.pdf

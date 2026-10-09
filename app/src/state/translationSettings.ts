@@ -171,16 +171,26 @@ class SettingsStore {
         previewMode: typeof parsed.previewMode === 'boolean' ? parsed.previewMode : base.previewMode,
       };
       if (isDesktop()) {
-        // 桌面直发请求，浏览器代理写法 /api/llm 必然 404：按「当前所选预设服务」
-        // 纠正成完整地址。已手动改过的其它地址（如 MiMo 的 Token Plan 变体）一律保留，
-        // 不再一律覆盖成 DeepSeek —— 否则选中 MiMo 却每次启动都被打回 DeepSeek（I26 修复）。
-        if (loaded.baseUrl.startsWith('/api/llm')) {
-          const preset = PROVIDER_PRESETS.find((p) => p.id === loaded.provider);
-          loaded.baseUrl = preset?.origin ?? DESKTOP_OVERRIDES.baseUrl ?? loaded.baseUrl;
+        // ── 桌面端地址一致性纠正（I26 首次修不彻底，I28 补齐）──
+        //
+        // 真正的漏网路径：桌面版**首次启动**时 localStorage 为空，`base` 用
+        // DESKTOP_OVERRIDES 取 DeepSeek 地址，随后 `persist()` 就把它**写进
+        // localStorage**。等用户在下拉框切成 MiMo 时，那条 DeepSeek 地址已经
+        // 躺在存储里了 —— 它不再以 `/api/llm` 开头，于是「只拦代理地址」的
+        // 第一版守卫放行它，MiMo 就一直显示着 DeepSeek 的接口地址。
+        //
+        // 所以判据不能是「是不是代理地址」，而必须是 **「是否与所选服务匹配」**：
+        // 命中别的预设的 origin，就按当前 provider 纠正。用户手动填的
+        // 自定义地址（MiMo 的 Token Plan 变体等）不匹配任何预设 origin，保持不变。
+        const preset = PROVIDER_PRESETS.find((p) => p.id === loaded.provider);
+        const foreign = PROVIDER_PRESETS.find(
+          (p) => p.id !== loaded.provider && p.origin === loaded.baseUrl
+        );
+        if (preset && (foreign || loaded.baseUrl.startsWith('/api/llm'))) {
+          loaded.baseUrl = preset.origin;
         }
         // 模型残留 DeepSeek 默认而服务不是 DeepSeek：同样按预设纠正，保持配置自洽
         if (loaded.provider !== 'deepseek' && loaded.model === DEFAULT_SETTINGS.model) {
-          const preset = PROVIDER_PRESETS.find((p) => p.id === loaded.provider);
           if (preset) loaded.model = preset.model;
         }
       }

@@ -100,6 +100,37 @@ describe('桌面环境（Tauri WebView）', () => {
     expect(loadSettings().baseUrl).toBe('https://api.xiaomimimo.com/v1');
   });
 
+  it('存储里已是完整 DeepSeek 地址但服务选了 MiMo 时纠正为 MiMo（I28 回归）', async () => {
+    installStubs({ tauri: true });
+    // 真实漏网路径：桌面版首次启动把 DeepSeek 默认地址 persist 进了 localStorage，
+    // 之后用户在下拉框切成 MiMo —— 那条 DeepSeek 地址仍在存储里，
+    // 不再是 '/api/llm' 代理写法，所以「只拦代理地址」的守卫会放行它。
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ provider: 'mimo', model: 'mimo-v2.6-pro', baseUrl: 'https://api.deepseek.com' })
+    );
+
+    const { loadSettings } = await importModule();
+    expect(loadSettings().provider).toBe('mimo');
+    expect(loadSettings().baseUrl).toBe('https://api.xiaomimimo.com/v1');
+  });
+
+  it('用户手填的自定义地址（不匹配任何预设）保持不变', async () => {
+    installStubs({ tauri: true });
+    // MiMo Token Plan 变体：不是任何预设的 origin，必须原样保留
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        provider: 'mimo',
+        model: 'mimo-v2.6-pro',
+        baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+      })
+    );
+
+    const { loadSettings } = await importModule();
+    expect(loadSettings().baseUrl).toBe('https://token-plan-cn.xiaomimimo.com/v1');
+  });
+
   it('Key 走钥匙串（防抖取最后一次），localStorage 里不含 Key', async () => {
     const h = installStubs({ tauri: true });
     const { updateTranslationSettings, loadSettings } = await importModule();

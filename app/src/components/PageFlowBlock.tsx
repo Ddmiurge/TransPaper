@@ -389,6 +389,9 @@ export function PageFlowBlock({
       hasContent,
       figurePaths: data.figurePaths,
       figureRegions: data.figureRegions,
+      // 表格区域也要传：防止表格的矢量线框被聚类成 figureRegion 后重复成为障碍，
+      // 生成两块纵向重叠的切片（I28）
+      tableRegions: data.analysis.tableRegions.map((t) => t.bbox),
       // 文档级行宽基准：收尾页只有半栏内容时仍按常规行宽排
       readingWidth: docReadingWidth > 0 ? docReadingWidth : undefined,
       // 手动改判：文本节点据此打 overridden 标记（块本身的改判已在 analyze 后套用）
