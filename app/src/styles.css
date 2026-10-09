@@ -96,6 +96,21 @@ body {
   color: var(--muted);
 }
 
+/* 缩放舞台（I27）
+ *
+ * 页面按 BASE_SCALE 只渲染一次，缩放全部由这一层的 CSS `zoom` 承担：
+ * 纯显示变换，不重建页面、不重渲染离屏画布、不触发 React 更新。
+ *
+ * 为什么是 `zoom` 而不是 `transform: scale()`：
+ *   - `zoom` 参与布局计算，滚动区尺寸自然跟随（transform 不改布局，
+ *     只能靠手工维护占位盒，瀑布流每加载一页尺寸就失配、页面被裁）；
+ *   - WebKit（macOS WKWebView）原生支持，桌面版表现与浏览器一致。
+ */
+.zoom-stage {
+  width: fit-content;
+  margin: 0 auto;
+}
+
 .toolbar label {
   display: flex;
   align-items: center;

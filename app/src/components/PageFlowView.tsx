@@ -177,7 +177,7 @@ export function PageFlowView({ flow, sourceCanvas, baseFontSize, rootRef, onMeas
         if (src.width < 1 || src.height < 1) emptySlices += 1;
 
         // 公式切片不放大到行宽 —— `y = F(x)+x` 拉到整行宽会大得离谱。
-        // 按「正文字号基准」缩放：baseFontSize（重排文档的正文字号，随缩放档位变）
+        // 按「正文字号基准」缩放：baseFontSize（重排文档的正文字号）
         // ÷ bodyFontSize（页面上正文的原始字号），公式字面高度即与两侧正文一致。
         const scale = node.scaleToText
           ? baseFontSize / Math.max(1, flow.bodyFontSize)

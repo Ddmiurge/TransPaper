@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import fixtureUrl from '../fixtures/two-column-sample.pdf?url';
 import { LibrarySidebar } from './components/LibrarySidebar';
@@ -22,9 +22,9 @@ import { extractPageItems, loadPdf, probePdfEnvironment } from './pdf/pdfjsAdapt
 import type { PageAnalysis } from './types';
 
 const BASE_SCALE = 1.5;
-/** 连续缩放的范围（相对 PDF 渲染基准的倍率） */
-const MIN_ZOOM = 0.4;
-const MAX_ZOOM = 3;
+/** 连续缩放的范围（相对 BASE_SCALE 的显示倍率，纯显示变换） */
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 2.5;
 
 /**
  * 从 PDF 提取论文标题，用于论文库侧边栏显示。
@@ -172,13 +172,30 @@ export default function App() {
    * 行宽在文档内保持稳定。
    */
   const [docReadingWidth, setDocReadingWidth] = useState(0);
-  const [scale, setScale] = useState(BASE_SCALE);
-  // ── 连续缩放（I26）：scale = 渲染分辨率（昂贵，切换会重渲染离屏画布）；
-  //    viewScale = 用户期望缩放，用 CSS zoom 实时预览、零成本，松手后再提交 scale ──
-  const [viewScale, setViewScale] = useState(BASE_SCALE);
-  const viewScaleRef = useRef(BASE_SCALE);
-  viewScaleRef.current = viewScale;
+  const [scale] = useState(BASE_SCALE);
+  /**
+   * ── 连续缩放（I27）──
+   *
+   * 上一版把「用户缩放」和「PDF 渲染分辨率」绑成同一个 scale，结果捏合过程中
+   * 每次都重建全部页面的离屏画布、还要把 readyUpTo 回退触发顺序重载 ——
+   * 于是又慢、又「跳一下重新加载」。**缩放不该碰渲染**。
+   *
+   * 现在页面只按 BASE_SCALE 渲染**一次**，缩放纯粹是显示变换：
+   *   - `zoomRef` 是唯一事实来源，wheel/捏合事件里**直接改 DOM**
+   *     （`transform: scale()` 走 GPU 合成，不重排、不重渲染、不触发 React 更新）；
+   *   - 只有「停手 140ms 后」才同步一次 React state，供百分比显示；
+   *   - 页面自然尺寸变化（瀑布流逐页加载）时用 ResizeObserver 校正占位盒。
+   *
+   * 捏合锚点：记录手势起点的内容坐标，缩放后按比例修正 scrollTop ——
+   * 这样双指捏合时内容不会在指针下「漂移」，这是它跟「原地缩放」的手感差别。
+   */
+  const zoomRef = useRef(1);
+  const [zoomLabel, setZoomLabel] = useState(1);
   const viewportRef = useRef<HTMLElement | null>(null);
+  /** 缩放舞台：外层负责占位（撑开滚动区），内层负责 transform */
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  /** 捏合手势起点（内容坐标 + 起始 zoom），捏合全程用它反解滚动位置 */
+  const pinchRef = useRef<{ contentX: number; contentY: number; zoom: number } | null>(null);
   const zoomCommitTimer = useRef<number | null>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState('');
@@ -225,22 +242,53 @@ export default function App() {
   const clampZoom = (v: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v));
 
   /**
-   * 提交一个缩放值：先实时更新 viewScale（CSS zoom 立即预览，零成本），
-   * 防抖 160ms 后再把它落实为渲染分辨率 scale（重渲染离屏画布，保证清晰）。
-   * 落定时只重渲染当前页起，避免已解析的每页同时重渲染（见原缩放注释）。
+   * 把某个 zoom 值直接应用到 DOM —— 不经过 React state。
+   *
+   * 缩放是**纯显示变换**：只改 `zoom` 这一个 CSS 属性，不触发 React 更新、
+   * 不重建任何页面、不碰渲染分辨率。所以捏合过程中哪怕每帧都调它也不会卡。
+   *
+   * 用 `zoom` 而不是 `transform: scale()` 的关键理由：`zoom` **会**参与布局计算，
+   * 滚动区尺寸自动跟随，瀑布流后续加载的页面也不会被裁掉；而 transform 不改布局，
+   * 得手工维护占位盒，一有新页面加载尺寸就失配。
+   *
+   * `originY` 用于双指捏合的锚点：记录手势起点在内容坐标系的位置，
+   * 缩放后按新倍率反解 scrollTop，让内容在指针下不动（不「漂移」）。
    */
-  const commitScale = useCallback(
-    (next: number) => {
-      const v = clampZoom(next);
-      setViewScale(v);
-      if (zoomCommitTimer.current !== null) window.clearTimeout(zoomCommitTimer.current);
-      zoomCommitTimer.current = window.setTimeout(() => {
-        zoomCommitTimer.current = null;
-        setScale(v);
-        setReadyUpTo(Math.max(0, pageNumber - 1));
-      }, 160);
+  const applyZoom = useCallback((z: number, originY?: number) => {
+    const stage = stageRef.current;
+    const vp = viewportRef.current;
+    if (!stage) return;
+    const v = clampZoom(z);
+    const prev = zoomRef.current;
+
+    if (originY !== undefined && prev > 0 && vp) {
+      // 内容坐标 y（未缩放）= scrollTop + 视口内偏移。缩放后要让它仍在同一视觉位置：
+      // scrollTop' + originY = (scrollTop + originY) * v / prev
+      vp.scrollTop = (vp.scrollTop + originY) * (v / prev) - originY;
+    }
+
+    zoomRef.current = v;
+    stage.style.zoom = String(v);
+  }, []);
+
+  /** 停手后再同步 React state（只为了百分比显示与滑块位置） */
+  const commitZoomLabel = useCallback(() => {
+    if (zoomCommitTimer.current !== null) window.clearTimeout(zoomCommitTimer.current);
+    zoomCommitTimer.current = window.setTimeout(() => {
+      zoomCommitTimer.current = null;
+      setZoomLabel(zoomRef.current);
+    }, 140);
+  }, []);
+
+  /** 设定目标缩放（滑块 / 按钮 / 键盘用；无锚点，按视口中心） */
+  const setZoom = useCallback(
+    (z: number) => {
+      const vp = viewportRef.current;
+      const originY = vp ? vp.clientHeight / 2 : undefined;
+      applyZoom(z, originY);
+      commitZoomLabel();
     },
-    [pageNumber]
+    [applyZoom, commitZoomLabel]
   );
 
   // 触控板双指捏合 / Ctrl(Cmd)+滚轮 = 缩放；普通滚轮留给页面滚动（非 passive 才能阻止默认缩放）
@@ -250,12 +298,32 @@ export default function App() {
     const onWheel = (e: WheelEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
-      const factor = Math.exp(-e.deltaY * 0.0015); // 乘法式、平滑跟随手势
-      commitScale(viewScaleRef.current * factor);
+      // 手势起点只在第一次 wheel 时记，之后复用（两次捏合之间会重置）
+      if (pinchRef.current === null) {
+        pinchRef.current = {
+          contentX: el.scrollLeft,
+          contentY: el.scrollTop,
+          zoom: zoomRef.current,
+        };
+      }
+      const originY = e.clientY - el.getBoundingClientRect().top;
+      const factor = Math.exp(-e.deltaY * 0.0022); // 乘法式、平滑跟随手势
+      applyZoom(zoomRef.current * factor, originY);
+      commitZoomLabel();
+    };
+    const onWheelEnd = () => {
+      // 停手：清掉手势锚点，下次捏合重新记
+      pinchRef.current = null;
     };
     el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, [commitScale]);
+    el.addEventListener('wheelend', onWheelEnd as EventListener);
+    el.addEventListener('mouseleave', onWheelEnd);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('wheelend', onWheelEnd as EventListener);
+      el.removeEventListener('mouseleave', onWheelEnd);
+    };
+  }, [applyZoom, commitZoomLabel]);
 
   // Ctrl/Cmd + '+' / '-' / '0' 快捷键缩放
   useEffect(() => {
@@ -263,18 +331,18 @@ export default function App() {
       if (!(e.ctrlKey || e.metaKey)) return;
       if (e.key === '=' || e.key === '+') {
         e.preventDefault();
-        commitScale(viewScaleRef.current + 0.1);
+        setZoom(zoomRef.current + 0.1);
       } else if (e.key === '-') {
         e.preventDefault();
-        commitScale(viewScaleRef.current - 0.1);
+        setZoom(zoomRef.current - 0.1);
       } else if (e.key === '0') {
         e.preventDefault();
-        commitScale(BASE_SCALE);
+        setZoom(1);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [commitScale]);
+  }, [setZoom]);
 
   /** 打开本地 PDF */
   const openFile = useCallback(async (file: File) => {
@@ -613,27 +681,27 @@ export default function App() {
         </div>
 
         <div className="group zoom-control">
-          <button type="button" onClick={() => commitScale(viewScale - 0.1)} title="缩小 (Ctrl/Cmd −)">
+          <button type="button" onClick={() => setZoom(zoomRef.current - 0.1)} title="缩小 (Ctrl/Cmd −)">
             −
           </button>
           <input
             type="range"
             min={MIN_ZOOM}
             max={MAX_ZOOM}
-            step={0.1}
-            value={viewScale}
-            onChange={(e) => commitScale(Number(e.target.value))}
+            step={0.05}
+            value={zoomLabel}
+            onChange={(e) => setZoom(Number(e.target.value))}
             aria-label="缩放比例"
           />
           <button
             type="button"
             className="zoom-label"
-            onClick={() => commitScale(BASE_SCALE)}
-            title="点击恢复默认 150%"
+            onClick={() => setZoom(1)}
+            title="点击恢复 100%"
           >
-            {Math.round(viewScale * 100)}%
+            {Math.round(zoomLabel * 100)}%
           </button>
-          <button type="button" onClick={() => commitScale(viewScale + 0.1)} title="放大 (Ctrl/Cmd +)">
+          <button type="button" onClick={() => setZoom(zoomRef.current + 0.1)} title="放大 (Ctrl/Cmd +)">
             +
           </button>
         </div>
@@ -733,17 +801,20 @@ export default function App() {
         {status === 'loading' && <div className="loading">正在加载 PDF…</div>}
 
         {doc && numPages > 0 && (
-          <div
-            className="paper paper-flow"
-            style={viewScale !== scale ? ({ zoom: viewScale / scale } as CSSProperties) : undefined}
-          >
+          /*
+           * 缩放舞台（I27）：页面按 BASE_SCALE 只渲染一次，缩放只改这一层的 CSS `zoom`。
+           * `zoom` 参与布局计算，所以滚动区会自然跟随，瀑布流后续加载的页面也不会被裁。
+           */
+          <div className="zoom-stage" ref={stageRef}>
+            <div className="paper paper-flow">
             {/* 瀑布流：全部页面依次排列，向下滚动即可连续阅读，
                 不必再一页页点「下一页」。每页只在自己的 enabled 为真时才开始解析。 */}
             {Array.from({ length: numPages }, (_, i) => i + 1).map((n) => (
               <PageFlowBlock
-                // key 带上 scale：切换缩放意味着「以新的分辨率重新渲染」，
-                // 必须重建区块（组件内部对同一页只加载一次，是有意为之）。
-                key={`${n}-${scale}`}
+                // key 只带页码（I27）：缩放已改为纯 CSS zoom，**不再**重建页面。
+                // 之前 key 带 scale，捏合到新倍率就得把每页离屏画布重渲染一遍、
+                // 并把 readyUpTo 回退触发顺序重载 —— 那正是「跳一下重新加载」的来源。
+                key={n}
                 doc={doc}
                 pageNumber={n}
                 scale={scale}
@@ -759,6 +830,7 @@ export default function App() {
                 onBlockContextMenu={handleBlockContextMenu}
               />
             ))}
+            </div>
           </div>
         )}
 
