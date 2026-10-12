@@ -8,12 +8,19 @@ import type { BBox } from '../types';
  *
  * 真正的计算在 `operatorPaths.ts`（纯逻辑、可在 Node 里测）；
  * 这里只负责拿到 getOperatorList() 并取出 OPS 枚举。
+ *
+ * 页面尺寸一并传下去，启用「页内合理性」过滤 ——
+ * pdf.js 的 constructPath minMax 会被污染（实测穿透页面 2.3 倍，
+ * 详见 operatorPaths.ts 的 isFullyInsidePage 注释）。
  */
 export async function extractPathBoxes(page: any, scale: number): Promise<BBox[]> {
   const OPS = pdfjsLib.OPS as unknown as OperatorIds;
   const viewport = page.getViewport({ scale });
   const ops = await page.getOperatorList();
-  return geometryBoxesFromOperators(ops, viewport.transform as number[], OPS).paths;
+  return geometryBoxesFromOperators(ops, viewport.transform as number[], OPS, {
+    width: viewport.width,
+    height: viewport.height,
+  }).paths;
 }
 
 /**
@@ -26,5 +33,8 @@ export async function extractImageBoxes(page: any, scale: number): Promise<BBox[
   const OPS = pdfjsLib.OPS as unknown as OperatorIds;
   const viewport = page.getViewport({ scale });
   const ops = await page.getOperatorList();
-  return geometryBoxesFromOperators(ops, viewport.transform as number[], OPS).images;
+  return geometryBoxesFromOperators(ops, viewport.transform as number[], OPS, {
+    width: viewport.width,
+    height: viewport.height,
+  }).images;
 }

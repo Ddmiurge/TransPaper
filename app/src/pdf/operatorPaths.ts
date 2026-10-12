@@ -61,6 +61,42 @@ function multiply(m1: number[], m2: number[]): number[] {
   ];
 }
 
+/**
+ * 路径包围盒的「页内」合理性检查。
+ *
+ * ── 为什么需要 ──
+ * pdf.js 的 `constructPath` 第三个参数（minMax）并不可靠。实测
+ * 《Breaking Multimodal LLM Safety via Video-Driven Prompting》第 4 页
+ * （matplotlib 柱状图，`save → clip → constructPath → restore` 结构）：
+ * 8 条柱子路径的 minMax 的 y 最小值是 **-7946.57 / -6013.64**，
+ * 同一个值在同一页重复 4 次 —— 典型的跨操作累积污染，不是真实坐标。
+ * 过 CTM（scale 0.21）与视口变换后，这些框变成 y=138–2702，
+ * 而页高只有 1188，即**穿透页面 2.3 倍**。
+ *
+ * 后果是连锁的：被污染的簇包围盒横跨整页 → `expandRegionsToText`
+ * 顺着它吞掉所有邻近文字 → `remarkBodyBlocksInsideRegions` 把
+ * **整页正文**（30 个 block）全部标记为 `graphics-region`，
+ * 用户看到的就是「这一页什么都没识别出来」。
+ *
+ * ── 为什么用「必须完全落在页内」这么严格的判据 ──
+ * 在四份基线样本（双栏 ResNet / 单栏 / ACL / eyes-on-me，共 12 页 3840 条路径）
+ * 上实测：路径要么**完全**在页内，要么**完全**在页外（767/1470、628/1488 是
+ * 完全页外的 clip 与装饰路径），**「部分在页外」的路径一条都没有**。
+ * 而污染值的特征恰恰是「部分在页外」（那 8 条页外比例 47%–59%）。
+ * 因此「完全落在页内」既挡住全部污染值，又不误伤任何真实图形。
+ *
+ * margin 取 2px 只为容忍量化误差，不承担"允许出血"的职责 ——
+ * 真实出血图形在四份基线里同样不存在。
+ */
+function isFullyInsidePage(box: BBox, page: PageSize, margin = 2): boolean {
+  return (
+    box.x >= -margin &&
+    box.y >= -margin &&
+    box.x + box.width <= page.width + margin &&
+    box.y + box.height <= page.height + margin
+  );
+}
+
 /** 用矩阵变换一个轴对齐包围盒，返回变换后的轴对齐包围盒 */
 function transformBox(m: number[], x0: number, y0: number, x1: number, y1: number): BBox {
   let minX = Infinity;
@@ -102,6 +138,12 @@ export interface GeometryBoxes {
   images: BBox[];
 }
 
+/** 页面尺寸（视口坐标，px）。传入即启用「页内合理性」过滤 */
+export interface PageSize {
+  width: number;
+  height: number;
+}
+
 /** 判断一个算子编号是否是位图绘制 */
 function isImageOp(fn: number, ids: OperatorIds): boolean {
   return (
@@ -119,11 +161,16 @@ function isImageOp(fn: number, ids: OperatorIds): boolean {
  * @param ops pdf.js `page.getOperatorList()` 的结果
  * @param viewportTransform `page.getViewport({scale}).transform`
  * @param ids pdf.js 的 OPS 枚举中本模块需要的编号
+ * @param pageSize 页面尺寸（视口坐标）。**传入即启用「页内合理性」过滤**：
+ *   完全落在页面外的框（clip / 装饰路径）与被 pdf.js minMax 污染
+ *   （部分在页外）的框都会被丢弃。两者对图形区域判定都没有贡献，
+ *   而后者会把簇包围盒撑到穿透整页。不传则不过滤（保持纯函数可测性）。
  */
 export function geometryBoxesFromOperators(
   ops: OperatorListLike,
   viewportTransform: number[],
-  ids: OperatorIds
+  ids: OperatorIds,
+  pageSize?: PageSize
 ): GeometryBoxes {
   let ctm: number[] = [1, 0, 0, 1, 0, 0];
   const stack: number[][] = [];
@@ -157,10 +204,14 @@ export function geometryBoxesFromOperators(
       const raw = [Number(minMax[0]), Number(minMax[1]), Number(minMax[2]), Number(minMax[3])];
       if (raw.some((v) => !Number.isFinite(v))) continue;
       // 视口变换是最后一步：v_viewport = v_user × CTM × viewportTransform
-      paths.push(transformBox(multiply(ctm, viewportTransform), raw[0], raw[1], raw[2], raw[3]));
+      const box = transformBox(multiply(ctm, viewportTransform), raw[0], raw[1], raw[2], raw[3]);
+      if (pageSize && !isFullyInsidePage(box, pageSize)) continue;
+      paths.push(box);
     } else if (isImageOp(fn, ids)) {
       // 位图绘制在单位正方形上，放置框 = 单位正方形 × CTM × 视口
-      images.push(transformBox(multiply(ctm, viewportTransform), 0, 0, 1, 1));
+      const box = transformBox(multiply(ctm, viewportTransform), 0, 0, 1, 1);
+      if (pageSize && !isFullyInsidePage(box, pageSize)) continue;
+      images.push(box);
     }
   }
 

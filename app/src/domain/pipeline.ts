@@ -221,6 +221,9 @@ export function analyzePage(input: AnalyzeInput): PageAnalysis {
     pad: FIGURE_TEXT_PAD,
     bodyFontSize: style.bodyFontSize,
     maxFontRatio: FIGURE_TEXT_MAX_FONT_RATIO,
+    // 夹紧到页面：上游路径框一旦被 pdf.js 污染（实测穿透页面 2.3 倍），
+    // 迭代扩张会顺着它把整页文字吞进图形区域，正文全灭
+    pageSize: { width, height },
   });
 
   // ── 区域内正文块重标记 + 正文字号二次修正 ──

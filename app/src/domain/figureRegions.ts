@@ -1,6 +1,12 @@
 import type { BBox, Block } from '../types';
 import { intersects, unionBBox, coverageRatio } from './bbox';
 
+/** 页面尺寸（视口坐标，px）。用于把区域夹紧到页面内 */
+export interface PageSize {
+  width: number;
+  height: number;
+}
+
 /**
  * 图形区域：从页面的**矢量路径**中挑出「属于图表的那部分」。
  *
@@ -228,16 +234,25 @@ export function isEnclosedByGraphics(
  * 只并入**字号明显小于正文**的文字。图注（约 0.9 倍正文）在图的**外面**，
  * 不能并进来 —— 否则图形区域会一路吞掉图注与后面的正文。
  *
+ * ── 为什么最后必须夹紧到页面 ──
+ * 这是个迭代扩张过程（并入文字 → 区域变大 → 又能罩住下一段），
+ * 上游只要有**一个**被污染的路径框，扩张就会沿它一路跑到页面外。
+ * 实测《Breaking Multimodal LLM Safety via Video-Driven Prompting》
+ * 第 4 页：pdf.js 给出的柱子路径 minMax 含 -7946.57，扩张后区域变成
+ * y=108–2702（页高 1188），整页正文被 remarkBodyBlocksInsideRegions 吞掉。
+ * 夹紧到页面是兜底：即便上游漏过滤，区域也不可能穿透页面。
+ *
  * @param regions 图形路径聚类得到的区域
  * @param items 页面文字项（含字号）
  * @param o.pad 文字与区域边缘的最大间距（px），超过就不算"在图里"
  * @param o.bodyFontSize 正文基准字号
  * @param o.maxFontRatio 并入字号上限（相对正文）。超过这个比例的文字不并入
+ * @param o.pageSize 页面尺寸。传入则把结果夹紧到页面内（兜底，建议总是传入）
  */
 export function expandRegionsToText(
   regions: BBox[],
   items: Array<{ bbox: BBox } & { fontSize: number }>,
-  o: { pad: number; bodyFontSize: number; maxFontRatio: number }
+  o: { pad: number; bodyFontSize: number; maxFontRatio: number; pageSize?: PageSize }
 ): BBox[] {
   if (regions.length === 0) return [];
 
@@ -268,6 +283,17 @@ export function expandRegionsToText(
       }
     }
     if (!changed) break;
+  }
+  // 兜底：夹紧到页面。区域没有理由伸出页面之外 —— 伸出去的那部分
+  // 只会让 remarkBodyBlocksInsideRegions 吞掉更多正文（见函数注释）。
+  if (o.pageSize) {
+    return current.map((r) => {
+      const x0 = Math.max(0, r.x);
+      const y0 = Math.max(0, r.y);
+      const x1 = Math.min(o.pageSize!.width, r.x + r.width);
+      const y1 = Math.min(o.pageSize!.height, r.y + r.height);
+      return { x: x0, y: y0, width: Math.max(0, x1 - x0), height: Math.max(0, y1 - y0) };
+    });
   }
   return current;
 }

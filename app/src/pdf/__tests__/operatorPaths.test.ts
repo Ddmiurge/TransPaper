@@ -27,9 +27,9 @@ function path(x0: number, y0: number, x1: number, y1: number) {
   return [null, null, new Float32Array([x0, y0, x1, y1])];
 }
 
-function ops(entries: Array<[number, any]>) {
+function ops(entries: Array<[number | undefined, any]>) {
   return {
-    fnArray: entries.map((e) => e[0]),
+    fnArray: entries.map((e) => e[0] as number),
     argsArray: entries.map((e) => e[1]),
   };
 }
@@ -149,6 +149,63 @@ describe('geometryBoxesFromOperators · 边界情况', () => {
   it('没有路径时返回空数组', () => {
     const list = ops([[IDS.save, null], [IDS.restore, null]]);
     expect(geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS).paths).toEqual([]);
+  });
+});
+
+/**
+ * 「页内合理性」过滤（isFullyInsidePage）
+ *
+ * 触发它的真实案例：《Breaking Multimodal LLM Safety via Video-Driven Prompting》
+ * 第 4 页，matplotlib 柱状图的 8 条路径 minMax 含污染值 -7946.57，
+ * 变换后穿透页面 2.3 倍（y=138–2702，页高 1188），
+ * 把整页正文吞进图形区域。详见 operatorPaths.ts 中该函数的注释。
+ */
+describe('geometryBoxesFromOperators · 页内合理性过滤', () => {
+  const PAGE = { width: 918, height: 1188 };
+
+  it('不传 pageSize 时不过滤（保持纯函数可测性）', () => {
+    const list = ops([
+      [IDS.constructPath, path(100, 100, 200, 3000)], // 明显在页外
+    ]);
+    const boxes = geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS).paths;
+    expect(boxes).toHaveLength(1);
+  });
+
+  it('完全在页内的路径保留', () => {
+    const list = ops([[IDS.constructPath, path(100, 100, 200, 300)]]);
+    const boxes = geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS, PAGE).paths;
+    expect(boxes).toHaveLength(1);
+  });
+
+  it('完全在页外的路径丢弃', () => {
+    const list = ops([
+      [IDS.constructPath, path(100, 1300, 200, 1400)], // 页面下方
+      [IDS.constructPath, path(1000, 100, 1100, 200)], // 页面右方
+    ]);
+    expect(geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS, PAGE).paths).toEqual([]);
+  });
+
+  it('「部分在页外」的污染路径丢弃 —— 这是 pdf.js minMax 污染的特征', () => {
+    // 复现真实案例的形态：顶端在页内、底端穿透页面 2.3 倍
+    const list = ops([[IDS.constructPath, path(501, 138, 520, 2702)]]);
+    expect(geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS, PAGE).paths).toEqual([]);
+  });
+
+  it('贴边路径保留（2px 量化容差）', () => {
+    const list = ops([[IDS.constructPath, path(0, 0, 918, 1188)]]);
+    const boxes = geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS, PAGE).paths;
+    expect(boxes).toHaveLength(1);
+  });
+
+  it('位图放置框同样受过滤约束', () => {
+    const list = ops([
+      [IDS.paintImageXObject, [null]], // 单位正方形 × 单位变换 → 在页内
+      [IDS.constructPath, path(100, 1300, 200, 1400)], // 页外路径
+    ]);
+    const { images, paths } = geometryBoxesFromOperators(list, IDENTITY_VIEWPORT, IDS, PAGE);
+    expect(paths).toEqual([]);
+    // 单位正方形只有 1×1，在 918×1188 的页面内 → 保留
+    expect(images).toHaveLength(1);
   });
 });
 

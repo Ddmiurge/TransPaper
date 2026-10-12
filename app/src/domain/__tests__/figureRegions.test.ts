@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { figurePathBoxes, isEnclosedByGraphics } from '../figureRegions';
+import {
+  expandRegionsToText,
+  figurePathBoxes,
+  isEnclosedByGraphics,
+} from '../figureRegions';
 import type { BBox } from '../../types';
 
 const box = (x: number, y: number, width: number, height: number): BBox => ({
@@ -84,5 +88,68 @@ describe('文字是否被图形夹住', () => {
 
   it('没有图形时一律返回 false', () => {
     expect(isEnclosedByGraphics(box(0, 0, 100, 10), [], 5)).toBe(false);
+  });
+});
+
+/**
+ * expandRegionsToText 的「夹紧到页面」兜底。
+ *
+ * 触发它的真实案例：《Breaking Multimodal LLM Safety via Video-Driven Prompting》
+ * 第 4 页。pdf.js 给出的柱子路径 minMax 含污染值，扩张后区域变成 y=108–2702
+ * （页高 1188），整页正文被 remarkBodyBlocksInsideRegions 吞掉。
+ * 夹紧保证即便上游漏过滤，区域也不可能穿透页面。
+ */
+describe('expandRegionsToText · 夹紧到页面', () => {
+  const PAGE = { width: 918, height: 1188 };
+  const item = (x: number, y: number, w: number, h: number, fontSize: number) => ({
+    bbox: box(x, y, w, h),
+    fontSize,
+  });
+
+  it('区域被夹紧在页面内，不会伸出页面', () => {
+    const regions = [box(100, 100, 300, 2600)]; // 底端穿透到 2700
+    const out = expandRegionsToText(regions, [], {
+      pad: 24,
+      bodyFontSize: 15,
+      maxFontRatio: 0.85,
+      pageSize: PAGE,
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].y + out[0].height).toBeLessThanOrEqual(PAGE.height);
+    expect(out[0].y).toBe(100);
+  });
+
+  it('负方向同样被夹紧到 0', () => {
+    const regions = [box(-50, -80, 300, 200)];
+    const out = expandRegionsToText(regions, [], {
+      pad: 24,
+      bodyFontSize: 15,
+      maxFontRatio: 0.85,
+      pageSize: PAGE,
+    });
+    expect(out[0].x).toBe(0);
+    expect(out[0].y).toBe(0);
+  });
+
+  it('不传 pageSize 时保持原样（向后兼容）', () => {
+    const regions = [box(100, 100, 300, 2600)];
+    const out = expandRegionsToText(regions, [], {
+      pad: 24,
+      bodyFontSize: 15,
+      maxFontRatio: 0.85,
+    });
+    expect(out[0].y + out[0].height).toBe(2700);
+  });
+
+  it('并入图内小字标签的能力不受影响', () => {
+    const regions = [box(100, 200, 200, 60)];
+    const label = item(120, 170, 60, 10, 5); // 字号 5，远小于正文 15，且紧贴区域上缘
+    const out = expandRegionsToText(regions, [label], {
+      pad: 24,
+      bodyFontSize: 15,
+      maxFontRatio: 0.85,
+      pageSize: PAGE,
+    });
+    expect(out[0].y).toBe(170); // 标签被并入，区域上缘扩展到标签顶部
   });
 });
